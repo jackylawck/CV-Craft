@@ -1,3 +1,9 @@
+import os
+import sys
+
+# 將專案根目錄加入 Python 搜尋路徑
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import docx
 from models.schemas import RenderConfig
 import streamlit as st
