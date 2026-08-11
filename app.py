@@ -9,7 +9,7 @@ from docx.shared import Inches, Pt, RGBColor
 import streamlit as st
 from xhtml2pdf import pisa
 
-# 嘗試載入 fuzzywuzzy/rapidfuzz，若無安裝則降級為正則比對
+# 嘗試載入 fuzzywuzzy/rapidfuzz，若未安裝則自動降級為正則比對
 FUZZY_AVAILABLE = False
 try:
   from fuzzywuzzy import fuzz
@@ -35,7 +35,7 @@ I18N = {
         "font_label": "內文字型 / Font",
         "size_label": "內文字級 (pt)",
         "color_label": "標題主色 / Primary Color",
-        "security_info": "🔒 **企業級資安**：已強制關閉 Telemetry，100% 本地記憶體（RAM）運算，全系統輸入實施 XSS 轉義過濾。",
+        "security_info": "🔒 **企業級資安**：已強制關閉 Telemetry，100% 本地記憶體（RAM）運算，全系統輸入實施 XSS 轉義過濾與字元自動重組修復。",
         "col_in_header": "1. 輸入或上傳履歷內容",
         "file_uploader_label": "📁 上傳檔案 (.docx 或 .txt)",
         "col_in_label": "貼入原始文字：",
@@ -47,7 +47,7 @@ I18N = {
         "preview_label": "✍️ 預覽與二次微調：",
         "copy_hint": "👆 可點選右上角圖示全選複製純文字：",
         "info_empty": "👈 請在左側輸入履歷文字並按下「🚀 開始排版」按鈕。",
-        "processing": "⚡ 正在整理結構並渲染二進位文件...",
+        "processing": "⚡ 正在重組文字、清理雜訊與渲染文件...",
         "success": "✅ 排版完畢！可於右側下載或進行微調。",
         "error_msg": "❌ 排版過程發生例外：",
     },
@@ -58,7 +58,7 @@ I18N = {
         "font_label": "Body Font",
         "size_label": "Font Size (pt)",
         "color_label": "Header Primary Color",
-        "security_info": "🔒 **Enterprise Security**: Telemetry disabled. 100% local RAM execution with mandatory XSS escaping.",
+        "security_info": "🔒 **Enterprise Security**: Telemetry disabled. 100% local RAM execution with mandatory XSS escaping and spaced-out text restoration.",
         "col_in_header": "1. Input or Upload CV Content",
         "file_uploader_label": "📁 Upload Document (.docx or .txt)",
         "col_in_label": "Paste raw text:",
@@ -115,7 +115,7 @@ st.markdown(f'<p class="main-title">{t["title"]}</p>', unsafe_allow_html=True)
 st.markdown(f'<p class="sub-title">{t["subtitle"]}</p>', unsafe_allow_html=True)
 st.info(t["security_info"])
 
-# --- 2. 廣義標題庫與模糊比對庫 ---
+# --- 2. 廣義標題庫 ---
 KNOWN_HEADERS = [
     "RESUME",
     "CURRICULUM VITAE",
@@ -127,6 +127,7 @@ KNOWN_HEADERS = [
     "ACADEMIC AWARDS",
     "AWARDS",
     "HONORS AND AWARDS",
+    "HONORS & AWARDS",
     "CERTIFICATES & SKILLS",
     "OTHER SKILLS",
     "SKILLS",
@@ -134,9 +135,12 @@ KNOWN_HEADERS = [
     "CERTIFICATIONS",
     "WORK EXPERIENCE",
     "WORKING EXPERIENCE",
+    "CAREER & INTERNSHIP",
     "EMPLOYMENT HISTORY",
     "CAREER HISTORY",
     "PROFESSIONAL EXPERIENCE",
+    "PROJECT",
+    "EXTRACURRICULAR ACTIVITIES",
     "JOB APPLICATION DETAILS",
     "APPLICATION DETAILS",
     "CANDIDATE’S INFORMATION",
@@ -171,15 +175,12 @@ def is_header_line(line_str: str) -> bool:
   if not clean_str or clean_str.startswith("➢") or clean_str.startswith("•"):
     return False
 
-  # 1. 精確比對
   if clean_str in KNOWN_HEADERS:
     return True
 
-  # 2. 規則判斷：短字串且全大寫
   if clean_str.isupper() and len(clean_str) < 35:
     return True
 
-  # 3. 模糊比對 (Fuzzy Matching)
   if FUZZY_AVAILABLE:
     for h in KNOWN_HEADERS:
       if fuzz.ratio(clean_str, h) > 85:
@@ -188,8 +189,22 @@ def is_header_line(line_str: str) -> bool:
   return False
 
 
-# --- 3. 動態檔名提取 ---
+# --- 3. 修復 PDF/OCR 拆散字母 (例如: L I N J i e -> LIN Jie) ---
+def fix_spaced_out_text(text: str) -> str:
+  """自動將被空格分割的字母連鎖重組為完整單字"""
+  pattern = r"(?:^|\s)((?:[A-Za-z0-9\,.\-\:\@\#\(\)\/]\s+){2,}[A-Za-z0-9\,.\-\:\@\#\(\)\/])"
+
+  def replacer(match):
+    return re.sub(r"\s+", "", match.group(1))
+
+  fixed = re.sub(pattern, replacer, text)
+  fixed = re.sub(pattern, replacer, fixed)
+  return fixed
+
+
+# --- 4. 動態檔名提取 ---
 def extract_candidate_filename(raw_text: str) -> str:
+  # 優先搜尋欄位標籤
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -201,28 +216,48 @@ def extract_candidate_filename(raw_text: str) -> str:
     clean_name = "_".join(clean_name.split())
     if clean_name:
       return f"CV_{clean_name}"
+
+  # 若無欄位標籤，提取首行純英文/中文姓名 (避免捉到 RESUME 標題)
+  lines = [
+      l.strip()
+      for l in raw_text.splitlines()
+      if l.strip() and l.strip().upper() not in KNOWN_HEADERS
+  ]
+  if lines:
+    first_line = lines[0]
+    if len(first_line) < 30 and not re.search(
+        r"[:：@\d]", first_line
+    ):  # 避免捉到 Email/Mobile
+      clean_name = re.sub(r"[^\w\s]", "", first_line)
+      clean_name = "_".join(clean_name.split())
+      if clean_name:
+        return f"CV_{clean_name}"
+
   return "CV_Candidate"
 
 
-# --- 4. 核心解析邏輯與快取 (Cache) ---
+# --- 5. 核心解析邏輯與快取 (Cache) ---
 @st.cache_data
 def cached_clean_and_format_cv(raw_text: str) -> str:
   if not raw_text.strip():
     return ""
 
-  lines = raw_text.splitlines()
+  # 第一階段：修正單字母拆散
+  pre_processed_text = fix_spaced_out_text(raw_text)
+
+  lines = pre_processed_text.splitlines()
   cleaned_lines = []
 
   for line in lines:
     line_s = line.strip()
 
-    # 過濾頁碼雜訊
+    # 過濾頁碼雜訊 (例如: 2 | P a g e, Page 1 of 4)
     if re.search(
         r"^\d+\s*\|\s*P\s*a\s*g\s*e$", line_s, re.IGNORECASE
     ) or re.match(r"^Page\s+\d+\s+of\s+\d+$", line_s, re.IGNORECASE):
       continue
 
-    # 常用 OCR 錯字修復
+    # 修正常見 OCR 錯字
     line_s = re.sub(r"\bpply\b", "Apply", line_s, flags=re.IGNORECASE)
     line_s = re.sub(r"\b(\$\d+)\s+(\d+)\b", r"\1\2", line_s)
     line_s = re.sub(
@@ -236,7 +271,7 @@ def cached_clean_and_format_cv(raw_text: str) -> str:
   return "\n".join(cleaned_lines)
 
 
-# --- 5. Word 文件生成與快取 ---
+# --- 6. Word 文件生成與快取 ---
 @st.cache_data
 def cached_create_docx(
     raw_text: str, font_name: str, size_pt: int, color_rgb: tuple
@@ -310,7 +345,7 @@ def cached_create_docx(
   return buffer.getvalue()
 
 
-# --- 6. PDF 生成引擎 (含 XSS 安全轉義與快取) ---
+# --- 7. PDF 生成引擎 (含 XSS 安全轉義與快取) ---
 @st.cache_data
 def cached_create_pdf(
     raw_text: str, font_name: str, size_pt: int, color_hex: str
@@ -340,7 +375,6 @@ def cached_create_pdf(
     if not line_str:
       continue
 
-    # XSS 安全過濾：轉義 HTML 特殊字元
     safe_line = html.escape(line_str)
 
     if is_header_line(line_str):
@@ -375,7 +409,7 @@ def cached_create_pdf(
   return pdf_buffer.getvalue()
 
 
-# --- 7. UI 介面 ---
+# --- 8. UI 介面 ---
 col_in, col_out = st.columns([1, 1])
 
 if "formatted_text" not in st.session_state:
@@ -440,7 +474,6 @@ with col_out:
     btn_col1, btn_col2 = st.columns(2)
 
     try:
-      # 生成二進位檔 (直接存取快取)
       docx_bytes = cached_create_docx(
           edited_result, font_choice, font_size, primary_rgb
       )
