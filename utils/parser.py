@@ -1,7 +1,7 @@
 import html
 import re
 
-# 防禦性載入 logger 與 config
+# Defensive loading for logger
 try:
   from utils.logger import logger
 except Exception:
@@ -19,11 +19,13 @@ except Exception:
 
   logger = DummyLogger()
 
+# Defensive loading for CONFIG
 try:
   from config.loader import CONFIG
 except Exception:
   CONFIG = {}
 
+# Defensive loading for CVParseResult schema
 try:
   from models.schemas import CVParseResult
 except Exception:
@@ -36,7 +38,7 @@ except Exception:
     detected_headers: list = []
 
 
-# 防禦性載入 Fuzzy Matching 套件
+# Defensive loading for Fuzzy Matching libraries
 FUZZY_AVAILABLE = False
 try:
   from rapidfuzz import fuzz
@@ -50,7 +52,7 @@ except ImportError:
   except ImportError:
     FUZZY_AVAILABLE = False
 
-# 預設廣義標題 (避免 config.yaml 讀取失敗時出錯)
+# Default section headers (used if config.yaml is unavailable)
 DEFAULT_HEADERS = [
     "RESUME",
     "CURRICULUM VITAE",
@@ -65,6 +67,7 @@ DEFAULT_HEADERS = [
     "PROJECT",
     "AWARDS",
     "SKILLS",
+    "DATE AVAILABLE",
     "履歷",
     "個人資料",
     "工作經驗",
@@ -73,7 +76,7 @@ DEFAULT_HEADERS = [
 
 
 def clean_corrupted_symbols(text: str) -> str:
-  """1. 清除 PDF 複製失真產生的亂碼符號 (如韓文/特殊 ICON)"""
+  """1. Filter out corrupted Korean/icon characters from PDF/OCR copying."""
   cleaned = re.sub(
       r"[^\u4e00-\u9fa5a-zA-Z0-9\s\.\,\:\;\-\_\+\*\/\(\)\@\#\&\%\'\"]+",
       " ",
@@ -83,7 +86,7 @@ def clean_corrupted_symbols(text: str) -> str:
 
 
 def fix_spaced_out_text(text: str) -> str:
-  """2. 重組被空格拆散的單字 (如 L I N J i e -> LIN Jie)"""
+  """2. Recombine characters broken by excessive spaces (e.g., L I N J i e -> LIN Jie)."""
   pattern = r"(?:^|\s)((?:[A-Za-z0-9\,.\-\:\@\#\(\)\/]\s+){2,}[A-Za-z0-9\,.\-\:\@\#\(\)\/])"
 
   def replacer(match):
@@ -94,28 +97,46 @@ def fix_spaced_out_text(text: str) -> str:
 
 
 def is_header_line(line_str: str) -> bool:
-  """3. 精準對齊大標題"""
+  """3. Strictly identify main section headers to prevent false underlining on sub-items."""
   clean_str = line_str.strip().upper()
-  if not clean_str or clean_str.startswith("➢") or clean_str.startswith("•"):
+
+  # Exclude lines with colons, bullet points, or list markers
+  if (
+      not clean_str
+      or ":" in clean_str
+      or "：" in clean_str
+      or clean_str.startswith(("➢", "•", "-"))
+  ):
+    return False
+
+  # Exclude personal details sub-field labels
+  if clean_str in [
+      "NAME",
+      "SEX",
+      "MARITAL STATUS",
+      "RESIDENT ADDRESS",
+      "TELEPHONE NUMBER",
+      "E-MAIL ADDRESS",
+  ]:
     return False
 
   known_headers = CONFIG.get("headers", DEFAULT_HEADERS)
 
+  # Exact match against known section headers
   if clean_str in known_headers:
     return True
 
-  if clean_str.isupper() and len(clean_str) < 35:
-    if 4 <= len(clean_str) <= 32 and FUZZY_AVAILABLE:
-      for h in known_headers:
-        if fuzz.ratio(clean_str, h) > 85:
-          return True
-    return True
+  # Strict fuzzy match for uppercase lines between 4 and 30 characters
+  if clean_str.isupper() and 4 <= len(clean_str) <= 30 and FUZZY_AVAILABLE:
+    for h in known_headers:
+      if fuzz.ratio(clean_str, h) > 85:
+        return True
 
   return False
 
 
 def extract_candidate_filename(raw_text: str) -> str:
-  """4. 精準提取人名 (支援 (in English) / (in Chinese) 與無標籤首行)"""
+  """4. Extract candidate name accurately for output file naming."""
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*(?:\(in [A-Za-z]+\))?\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -163,7 +184,7 @@ def extract_candidate_filename(raw_text: str) -> str:
 
 
 def parse_and_clean_cv(raw_text: str) -> CVParseResult:
-  """5. 主清洗流程"""
+  """5. Main pipeline to clean, repair, and parse CV text."""
   if not raw_text.strip():
     return CVParseResult(
         raw_text="", cleaned_text="", candidate_filename="CV_Candidate"
@@ -190,15 +211,15 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
     if not line_s:
       continue
 
-    # 1. 過濾頁碼雜訊
+    # Filter out standalone page numbers
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in page_patterns):
       continue
 
-    # 2. 過濾 Confidential 聲明雜訊
+    # Filter out confidentiality notices
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in ignore_patterns):
       continue
 
-    # 3. OCR 錯字修復
+    # Perform OCR error replacements
     for item in ocr_replacements:
       if isinstance(item, dict) and "pattern" in item and "replacement" in item:
         line_s = re.sub(
