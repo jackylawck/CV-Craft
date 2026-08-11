@@ -1,3 +1,5 @@
+from functools import lru_cache
+import html
 import os
 import re
 from io import BytesIO
@@ -5,9 +7,23 @@ import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 import streamlit as st
-from xhtml2pdf import pisa  # 純 Python 免 GTK+ PDF 轉換庫
+from xhtml2pdf import pisa
 
-# 頁面基本設定
+# 嘗試載入 fuzzywuzzy/rapidfuzz，若無安裝則降級為正則比對
+FUZZY_AVAILABLE = False
+try:
+  from fuzzywuzzy import fuzz
+
+  FUZZY_AVAILABLE = True
+except ImportError:
+  try:
+    from rapidfuzz import fuzz
+
+    FUZZY_AVAILABLE = True
+  except ImportError:
+    FUZZY_AVAILABLE = False
+
+# 頁面設定
 st.set_page_config(page_title="CV-Craft 排歷匠", page_icon="📄", layout="wide")
 
 # --- 1. UI 雙語字典 ---
@@ -19,7 +35,7 @@ I18N = {
         "font_label": "內文字型 / Font",
         "size_label": "內文字級 (pt)",
         "color_label": "標題主色 / Primary Color",
-        "security_info": "🔒 **零信任資安承諾**：關閉 Telemetry 統計，100% 本地記憶體（RAM）處理，絕不外洩個人資料（PII）。",
+        "security_info": "🔒 **企業級資安**：已強制關閉 Telemetry，100% 本地記憶體（RAM）運算，全系統輸入實施 XSS 轉義過濾。",
         "col_in_header": "1. 輸入或上傳履歷內容",
         "file_uploader_label": "📁 上傳檔案 (.docx 或 .txt)",
         "col_in_label": "貼入原始文字：",
@@ -31,6 +47,9 @@ I18N = {
         "preview_label": "✍️ 預覽與二次微調：",
         "copy_hint": "👆 可點選右上角圖示全選複製純文字：",
         "info_empty": "👈 請在左側輸入履歷文字並按下「🚀 開始排版」按鈕。",
+        "processing": "⚡ 正在整理結構並渲染二進位文件...",
+        "success": "✅ 排版完畢！可於右側下載或進行微調。",
+        "error_msg": "❌ 排版過程發生例外：",
     },
     "en": {
         "title": "CV-Craft",
@@ -39,7 +58,7 @@ I18N = {
         "font_label": "Body Font",
         "size_label": "Font Size (pt)",
         "color_label": "Header Primary Color",
-        "security_info": "🔒 **Zero-Trust Privacy**: Telemetry disabled. 100% local RAM execution with zero network packet leakage.",
+        "security_info": "🔒 **Enterprise Security**: Telemetry disabled. 100% local RAM execution with mandatory XSS escaping.",
         "col_in_header": "1. Input or Upload CV Content",
         "file_uploader_label": "📁 Upload Document (.docx or .txt)",
         "col_in_label": "Paste raw text:",
@@ -51,10 +70,13 @@ I18N = {
         "preview_label": "✍️ Preview & Live Edit:",
         "copy_hint": "👆 Click top right icon to copy formatted plain text:",
         "info_empty": "👈 Please input CV text on the left and click '🚀 Format CV'.",
+        "processing": "⚡ Processing document structure & rendering files...",
+        "success": "✅ Formatting complete!",
+        "error_msg": "❌ Exception occurred during formatting:",
     },
 }
 
-# 側邊欄：語言切換與排版控制項
+# 側邊欄設定
 st.sidebar.header("Settings / 設定")
 lang_choice = st.sidebar.radio("🌐 UI Language / 介面語言", ["繁體中文", "English"])
 lang_key = "zh" if lang_choice == "繁體中文" else "en"
@@ -77,7 +99,7 @@ def hex_to_rgb(hex_str):
 
 primary_rgb = hex_to_rgb(primary_color_hex)
 
-# 自訂 CSS 樣式
+# CSS 注入
 st.markdown(
     f"""
 <style>
@@ -93,7 +115,7 @@ st.markdown(f'<p class="main-title">{t["title"]}</p>', unsafe_allow_html=True)
 st.markdown(f'<p class="sub-title">{t["subtitle"]}</p>', unsafe_allow_html=True)
 st.info(t["security_info"])
 
-# --- 2. 廣義標題識別庫 ---
+# --- 2. 廣義標題庫與模糊比對庫 ---
 KNOWN_HEADERS = [
     "RESUME",
     "CURRICULUM VITAE",
@@ -144,8 +166,30 @@ KNOWN_HEADERS = [
 ]
 
 
-# --- 3. 提取姓名以動態命名檔名 ---
-def extract_candidate_filename(raw_text):
+def is_header_line(line_str: str) -> bool:
+  clean_str = line_str.strip().upper()
+  if not clean_str or clean_str.startswith("➢") or clean_str.startswith("•"):
+    return False
+
+  # 1. 精確比對
+  if clean_str in KNOWN_HEADERS:
+    return True
+
+  # 2. 規則判斷：短字串且全大寫
+  if clean_str.isupper() and len(clean_str) < 35:
+    return True
+
+  # 3. 模糊比對 (Fuzzy Matching)
+  if FUZZY_AVAILABLE:
+    for h in KNOWN_HEADERS:
+      if fuzz.ratio(clean_str, h) > 85:
+        return True
+
+  return False
+
+
+# --- 3. 動態檔名提取 ---
+def extract_candidate_filename(raw_text: str) -> str:
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -160,8 +204,9 @@ def extract_candidate_filename(raw_text):
   return "CV_Candidate"
 
 
-# --- 4. 核心邏輯：文字清理與錯字修正 ---
-def clean_and_format_cv(raw_text):
+# --- 4. 核心解析邏輯與快取 (Cache) ---
+@st.cache_data
+def cached_clean_and_format_cv(raw_text: str) -> str:
   if not raw_text.strip():
     return ""
 
@@ -177,7 +222,7 @@ def clean_and_format_cv(raw_text):
     ) or re.match(r"^Page\s+\d+\s+of\s+\d+$", line_s, re.IGNORECASE):
       continue
 
-    # 修正常見 OCR 錯字與格式
+    # 常用 OCR 錯字修復
     line_s = re.sub(r"\bpply\b", "Apply", line_s, flags=re.IGNORECASE)
     line_s = re.sub(r"\b(\$\d+)\s+(\d+)\b", r"\1\2", line_s)
     line_s = re.sub(
@@ -191,8 +236,11 @@ def clean_and_format_cv(raw_text):
   return "\n".join(cleaned_lines)
 
 
-# --- 5. 建立 Word (.docx) 文件 ---
-def create_docx(raw_text, font_name, size_pt, color_rgb):
+# --- 5. Word 文件生成與快取 ---
+@st.cache_data
+def cached_create_docx(
+    raw_text: str, font_name: str, size_pt: int, color_rgb: tuple
+) -> bytes:
   doc = docx.Document()
 
   for section in doc.sections:
@@ -214,13 +262,7 @@ def create_docx(raw_text, font_name, size_pt, color_rgb):
     if not line_str:
       continue
 
-    is_header = line_str.upper() in KNOWN_HEADERS or (
-        line_str.isupper()
-        and len(line_str) < 35
-        and not line_str.startswith("➢")
-    )
-
-    if is_header:
+    if is_header_line(line_str):
       p = doc.add_paragraph()
       p.paragraph_format.space_before = Pt(14)
       p.paragraph_format.space_after = Pt(4)
@@ -265,12 +307,14 @@ def create_docx(raw_text, font_name, size_pt, color_rgb):
 
   buffer = BytesIO()
   doc.save(buffer)
-  buffer.seek(0)
-  return buffer
+  return buffer.getvalue()
 
 
-# --- 6. 純 Python PDF 生成引擎 (免 GTK+) ---
-def create_pdf_from_html(raw_text, font_name, size_pt, color_hex):
+# --- 6. PDF 生成引擎 (含 XSS 安全轉義與快取) ---
+@st.cache_data
+def cached_create_pdf(
+    raw_text: str, font_name: str, size_pt: int, color_hex: str
+) -> bytes:
   lines = raw_text.splitlines()
 
   html_content = f"""
@@ -296,46 +340,42 @@ def create_pdf_from_html(raw_text, font_name, size_pt, color_hex):
     if not line_str:
       continue
 
-    is_header = line_str.upper() in KNOWN_HEADERS or (
-        line_str.isupper()
-        and len(line_str) < 35
-        and not line_str.startswith("➢")
-    )
+    # XSS 安全過濾：轉義 HTML 特殊字元
+    safe_line = html.escape(line_str)
 
-    if is_header:
+    if is_header_line(line_str):
       if line_str.upper() in ["RESUME", "CURRICULUM VITAE", "履歷"]:
-        html_content += f"<h1>{line_str.upper()}</h1>"
+        html_content += f"<h1>{safe_line.upper()}</h1>"
       else:
-        html_content += f"<h2>{line_str.upper()}</h2>"
+        html_content += f"<h2>{safe_line.upper()}</h2>"
     elif (
         line_str.startswith("➢")
         or line_str.startswith("-")
         or line_str.startswith("•")
     ):
-      clean_item = re.sub(r"^[➢\-•]\s*", "• ", line_str)
+      clean_item = re.sub(r"^[➢\-•]\s*", "• ", safe_line)
       html_content += f'<p class="bullet">{clean_item}</p>'
     elif ":" in line_str and len(line_str.split(":")[0]) < 25:
-      parts = line_str.split(":", 1)
+      parts = safe_line.split(":", 1)
       html_content += (
           f'<p><span class="label">{parts[0]}:</span> {parts[1].strip()}</p>'
       )
     elif "：" in line_str and len(line_str.split("：")[0]) < 25:
-      parts = line_str.split("：", 1)
+      parts = safe_line.split("：", 1)
       html_content += (
           f'<p><span class="label">{parts[0]}：</span> {parts[1].strip()}</p>'
       )
     else:
-      html_content += f"<p>{line_str}</p>"
+      html_content += f"<p>{safe_line}</p>"
 
   html_content += "</body></html>"
 
   pdf_buffer = BytesIO()
   pisa.CreatePDF(html_content, dest=pdf_buffer)
-  pdf_buffer.seek(0)
-  return pdf_buffer
+  return pdf_buffer.getvalue()
 
 
-# --- 7. UI 介面佈局 (利用 Form 包裹按鈕) ---
+# --- 7. UI 介面 ---
 col_in, col_out = st.columns([1, 1])
 
 if "formatted_text" not in st.session_state:
@@ -344,22 +384,23 @@ if "formatted_text" not in st.session_state:
 with col_in:
   st.subheader(t["col_in_header"])
 
-  # 檔案上傳器
   uploaded_file = st.file_uploader(
       t["file_uploader_label"], type=["txt", "docx"]
   )
   default_text = ""
   if uploaded_file is not None:
-    if uploaded_file.type == "text/plain":
-      default_text = uploaded_file.read().decode("utf-8")
-    elif (
-        uploaded_file.type
-        == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ):
-      doc = docx.Document(uploaded_file)
-      default_text = "\n".join([p.text for p in doc.paragraphs])
+    try:
+      if uploaded_file.type == "text/plain":
+        default_text = uploaded_file.read().decode("utf-8")
+      elif (
+          uploaded_file.type
+          == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ):
+        doc = docx.Document(uploaded_file)
+        default_text = "\n".join([p.text for p in doc.paragraphs])
+    except Exception as e:
+      st.error(f"{t['error_msg']} {e}")
 
-  # 表單區塊：避免輸入時一直自動刷新
   with st.form(key="cv_input_form"):
     user_input = st.text_area(
         t["col_in_label"],
@@ -367,19 +408,24 @@ with col_in:
         height=450,
         placeholder=t["placeholder"],
     )
-    # 專用提交按鈕：點擊後才觸發排版
     submit_button = st.form_submit_button(
         label=t["btn_format"], use_container_width=True
     )
 
   if submit_button and user_input.strip():
-    st.session_state["formatted_text"] = clean_and_format_cv(user_input)
+    with st.spinner(t["processing"]):
+      try:
+        st.session_state["formatted_text"] = cached_clean_and_format_cv(
+            user_input
+        )
+        st.toast(t["success"], icon="✅")
+      except Exception as e:
+        st.error(f"{t['error_msg']} {e}")
 
 with col_out:
   st.subheader(t["col_out_header"])
 
   if st.session_state["formatted_text"]:
-    # 允許在右側二次微調
     edited_result = st.text_area(
         t["preview_label"],
         value=st.session_state["formatted_text"],
@@ -387,40 +433,42 @@ with col_out:
         key="editable_preview",
     )
 
-    # 提取檔名
     file_prefix = extract_candidate_filename(edited_result)
     docx_filename = f"{file_prefix}.docx"
     pdf_filename = f"{file_prefix}.pdf"
 
     btn_col1, btn_col2 = st.columns(2)
 
-    # 匯出 Word
-    docx_data = create_docx(
-        edited_result, font_choice, font_size, primary_rgb
-    )
-    with btn_col1:
-      st.download_button(
-          label=t["btn_docx"],
-          data=docx_data,
-          file_name=docx_filename,
-          mime=(
-              "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          ),
-          use_container_width=True,
+    try:
+      # 生成二進位檔 (直接存取快取)
+      docx_bytes = cached_create_docx(
+          edited_result, font_choice, font_size, primary_rgb
+      )
+      pdf_bytes = cached_create_pdf(
+          edited_result, font_choice, font_size, primary_color_hex
       )
 
-    # 匯出 PDF (純 Python 免 GTK+)
-    pdf_data = create_pdf_from_html(
-        edited_result, font_choice, font_size, primary_color_hex
-    )
-    with btn_col2:
-      st.download_button(
-          label=t["btn_pdf"],
-          data=pdf_data,
-          file_name=pdf_filename,
-          mime="application/pdf",
-          use_container_width=True,
-      )
+      with btn_col1:
+        st.download_button(
+            label=t["btn_docx"],
+            data=docx_bytes,
+            file_name=docx_filename,
+            mime=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            use_container_width=True,
+        )
+
+      with btn_col2:
+        st.download_button(
+            label=t["btn_pdf"],
+            data=pdf_bytes,
+            file_name=pdf_filename,
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    except Exception as e:
+      st.error(f"{t['error_msg']} {e}")
 
     st.markdown(t["copy_hint"])
     st.code(edited_result, language="text")
