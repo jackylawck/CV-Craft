@@ -17,7 +17,19 @@ except ImportError:
     FUZZY_AVAILABLE = False
 
 
+def clean_corrupted_symbols(text: str) -> str:
+  """1. 濾除 PDF 複製時產生的特殊韓文/圖示亂碼 (如 깳 긼 궼)"""
+  # 只保留 中文、英文字母、數字、常見標點符號與換行
+  cleaned = re.sub(
+      r"[^\u4e00-\u9fa5a-zA-Z0-9\s\.\,\:\;\-\_\+\*\/\(\)\@\#\&\%\'\"]+",
+      " ",
+      text,
+  )
+  return cleaned
+
+
 def fix_spaced_out_text(text: str) -> str:
+  """2. 自動重組被空格分割的字母與錯字"""
   pattern = r"(?:^|\s)((?:[A-Za-z0-9\,.\-\:\@\#\(\)\/]\s+){2,}[A-Za-z0-9\,.\-\:\@\#\(\)\/])"
 
   def replacer(match):
@@ -34,13 +46,10 @@ def is_header_line(line_str: str) -> bool:
 
   known_headers = CONFIG.get("headers", [])
 
-  # 1. 精確比對
   if clean_str in known_headers:
     return True
 
-  # 2. 規則比對：全大寫且長度適中
   if clean_str.isupper() and len(clean_str) < 35:
-    # 僅對 4 ~ 32 字元的句子進行 CPU 吃重的模糊比對，避免效能流失
     if 4 <= len(clean_str) <= 32 and FUZZY_AVAILABLE:
       for h in known_headers:
         if fuzz.ratio(clean_str, h) > 85:
@@ -51,6 +60,7 @@ def is_header_line(line_str: str) -> bool:
 
 
 def extract_candidate_filename(raw_text: str) -> str:
+  """3. 精準提取人名，避開 PERSONAL DATA / RESUME 等標題"""
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -63,16 +73,31 @@ def extract_candidate_filename(raw_text: str) -> str:
     if clean_name:
       return f"CV_{clean_name}"
 
+  # 避開通用大標題，尋找第一個像人名的行
+  ignored_titles = [
+      "PERSONAL DATA",
+      "PERSONAL INFORMATION",
+      "RESUME",
+      "CURRICULUM VITAE",
+      "CV",
+  ]
   lines = [
       l.strip()
       for l in raw_text.splitlines()
-      if l.strip() and l.strip().upper() not in CONFIG.get("headers", [])
+      if l.strip()
+      and l.strip().upper() not in CONFIG.get("headers", [])
+      and l.strip().upper() not in ignored_titles
   ]
-  if lines and len(lines[0]) < 30 and not re.search(r"[:：@\d]", lines[0]):
-    clean_name = re.sub(r"[^\w\s]", "", lines[0])
-    clean_name = "_".join(clean_name.split())
-    if clean_name:
-      return f"CV_{clean_name}"
+
+  for line in lines:
+    # 人名長度通常少於 35 字元，且不包含 @、Mobile、Location 等關鍵字
+    if len(line) < 35 and not re.search(
+        r"[:：@\d]|Mobile|Email|Location", line, re.IGNORECASE
+    ):
+      clean_name = re.sub(r"[^\w\s]", "", line)
+      clean_name = "_".join(clean_name.split())
+      if clean_name:
+        return f"CV_{clean_name}"
 
   return "CV_Candidate"
 
@@ -85,29 +110,39 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
 
   logger.info("開始解析履歷內文，原始字元數: %d", len(raw_text))
 
-  text = fix_spaced_out_text(raw_text)
+  # 步驟 A: 清除韓文亂碼與特殊符號
+  sanitized_text = clean_corrupted_symbols(raw_text)
+
+  # 步驟 B: 修復被空格拆散的字母
+  text = fix_spaced_out_text(sanitized_text)
+
   lines = text.splitlines()
   cleaned_lines = []
   detected_headers = []
 
   page_patterns = CONFIG.get("page_no_patterns", [])
+  # 擴充頁碼過濾：加入單獨一行的頁碼數字 (例如獨佔一行的 2, 3)
+  page_patterns.append(r"^\d+$")
+
   ignore_patterns = CONFIG.get("ignore_patterns", [])
   ocr_replacements = CONFIG.get("ocr_replacements", [])
 
   for line in lines:
     line_s = line.strip()
+    if not line_s:
+      continue
 
-    # 1. 過濾頁碼雜訊
+    # 過濾頁碼雜訊
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in page_patterns):
       logger.debug("已過濾頁碼雜訊: %s", line_s)
       continue
 
-    # 2. 過濾 Confidential / Draft 等雜訊
+    # 過濾 Confidential 等聲明雜訊
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in ignore_patterns):
       logger.debug("已過濾無關雜訊: %s", line_s)
       continue
 
-    # 3. 執行 OCR 錯字替換
+    # 執行 OCR 錯字替換
     for item in ocr_replacements:
       line_s = re.sub(
           item["pattern"], item["replacement"], line_s, flags=re.IGNORECASE
