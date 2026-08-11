@@ -1,19 +1,19 @@
-# utils/renderer.py
-
 import html
 from io import BytesIO
 import re
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
+from models.schemas import RenderConfig
+from utils.logger import logger
 from utils.parser import is_header_line
 from xhtml2pdf import pisa
 
 
-def create_docx(
-    raw_text: str, font_name: str, size_pt: int, color_rgb: tuple
-) -> bytes:
+def create_docx(raw_text: str, config: RenderConfig) -> bytes:
+  logger.info("正生成 Word (.docx) 檔案...")
   doc = docx.Document()
+
   for section in doc.sections:
     section.top_margin = Inches(0.8)
     section.bottom_margin = Inches(0.8)
@@ -22,8 +22,8 @@ def create_docx(
 
   style = doc.styles["Normal"]
   font = style.font
-  font.name = font_name
-  font.size = Pt(size_pt)
+  font.name = config.font_name
+  font.size = Pt(config.font_size)
   font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
   for line in raw_text.splitlines():
@@ -39,12 +39,12 @@ def create_docx(
 
       run = p.add_run(line_str.upper())
       run.bold = True
-      run.font.size = Pt(size_pt + 2.5)
-      run.font.color.rgb = RGBColor(*color_rgb)
+      run.font.size = Pt(config.font_size + 2.5)
+      run.font.color.rgb = RGBColor(*config.primary_color_rgb)
 
       if line_str.upper() in ["RESUME", "CURRICULUM VITAE", "履歷"]:
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run.font.size = Pt(size_pt + 5.5)
+        run.font.size = Pt(config.font_size + 5.5)
       continue
 
     p = doc.add_paragraph()
@@ -63,13 +63,13 @@ def create_docx(
       parts = line_str.split(":", 1)
       r_label = p.add_run(parts[0] + ": ")
       r_label.bold = True
-      r_label.font.color.rgb = RGBColor(*color_rgb)
+      r_label.font.color.rgb = RGBColor(*config.primary_color_rgb)
       p.add_run(parts[1].strip())
     elif "：" in line_str and len(line_str.split("：")[0]) < 25:
       parts = line_str.split("：", 1)
       r_label = p.add_run(parts[0] + "：")
       r_label.bold = True
-      r_label.font.color.rgb = RGBColor(*color_rgb)
+      r_label.font.color.rgb = RGBColor(*config.primary_color_rgb)
       p.add_run(parts[1].strip())
     else:
       p.add_run(line_str)
@@ -79,9 +79,8 @@ def create_docx(
   return buffer.getvalue()
 
 
-def create_pdf(
-    raw_text: str, font_name: str, size_pt: int, color_hex: str
-) -> bytes:
+def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
+  logger.info("正生成 PDF 檔案...")
   html_content = f"""
     <!DOCTYPE html>
     <html>
@@ -89,12 +88,12 @@ def create_pdf(
     <meta charset="utf-8">
     <style>
         @page {{ size: a4; margin: 18mm 15mm; }}
-        body {{ font-family: sans-serif; color: #333333; line-height: 1.4; font-size: {size_pt}pt; }}
-        h1 {{ text-align: center; color: {color_hex}; font-size: {size_pt + 5.5}pt; margin-bottom: 15px; }}
-        h2 {{ color: {color_hex}; border-bottom: 1.5px solid {color_hex}; font-size: {size_pt + 2.5}pt; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; }}
+        body {{ font-family: sans-serif; color: #333333; line-height: 1.4; font-size: {config.font_size}pt; }}
+        h1 {{ text-align: center; color: {config.primary_color_hex}; font-size: {config.font_size + 5.5}pt; margin-bottom: 15px; }}
+        h2 {{ color: {config.primary_color_hex}; border-bottom: 1.5px solid {config.primary_color_hex}; font-size: {config.font_size + 2.5}pt; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; }}
         p {{ margin: 3px 0; }}
         .bullet {{ margin-left: 18px; }}
-        .label {{ font-weight: bold; color: {color_hex}; }}
+        .label {{ font-weight: bold; color: {config.primary_color_hex}; }}
     </style>
     </head>
     <body>
