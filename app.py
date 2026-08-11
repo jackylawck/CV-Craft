@@ -5,6 +5,7 @@ import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt, RGBColor
 import streamlit as st
+from xhtml2pdf import pisa  # 純 Python 免 GTK+ PDF 轉換庫
 
 # 頁面基本設定
 st.set_page_config(page_title="CV-Craft 排歷匠", page_icon="📄", layout="wide")
@@ -18,18 +19,18 @@ I18N = {
         "font_label": "內文字型 / Font",
         "size_label": "內文字級 (pt)",
         "color_label": "標題主色 / Primary Color",
-        "security_info": "🔒 **零信任資安承諾**：已關閉 Telemetry 統計，100% 本地記憶體（RAM）處理，絕不外洩個人資料（PII），符合企業級個資合規標準。",
+        "security_info": "🔒 **零信任資安承諾**：關閉 Telemetry 統計，100% 本地記憶體（RAM）處理，絕不外洩個人資料（PII）。",
         "col_in_header": "1. 輸入或上傳履歷內容",
         "file_uploader_label": "📁 上傳檔案 (.docx 或 .txt)",
-        "col_in_label": "或直接貼入/編輯原始文字：",
+        "col_in_label": "貼入原始文字：",
+        "btn_format": "🚀 開始排版 (Format CV)",
         "placeholder": "RESUME\nPERSONAL INFORMATION / 個人資料\nCandidate's Name: ...\n(在此貼入或上傳履歷)",
-        "col_out_header": "2. 即時編輯與匯出",
+        "col_out_header": "2. 排版結果與匯出",
         "btn_docx": "📦 下載 Word (.docx)",
         "btn_pdf": "📄 下載 PDF (.pdf)",
-        "pdf_warning": "💡 提示：本機未安裝 GTK+ 時，請下載 Word 檔並於 Word 中另存為 PDF。",
-        "preview_label": "✍️ 預覽與二次微調（修改後將即時同步至下載檔案）：",
-        "copy_hint": "👆 可點選右上角圖示或全選複製下方乾淨純文字：",
-        "info_empty": "👈 請在左側輸入框貼入履歷文字或上傳檔案，右側將即時整理並提供下載。",
+        "preview_label": "✍️ 預覽與二次微調：",
+        "copy_hint": "👆 可點選右上角圖示全選複製純文字：",
+        "info_empty": "👈 請在左側輸入履歷文字並按下「🚀 開始排版」按鈕。",
     },
     "en": {
         "title": "CV-Craft",
@@ -38,18 +39,18 @@ I18N = {
         "font_label": "Body Font",
         "size_label": "Font Size (pt)",
         "color_label": "Header Primary Color",
-        "security_info": "🔒 **Zero-Trust Privacy**: Telemetry disabled. 100% local RAM execution with zero network packet leakage, fully compliant with enterprise PII standards.",
+        "security_info": "🔒 **Zero-Trust Privacy**: Telemetry disabled. 100% local RAM execution with zero network packet leakage.",
         "col_in_header": "1. Input or Upload CV Content",
         "file_uploader_label": "📁 Upload Document (.docx or .txt)",
-        "col_in_label": "Or paste/edit raw text directly:",
+        "col_in_label": "Paste raw text:",
+        "btn_format": "🚀 Format CV",
         "placeholder": "RESUME\nPERSONAL INFORMATION\nCandidate's Name: ...\n(Paste or upload CV here)",
         "col_out_header": "2. Live Edit & Export",
         "btn_docx": "📦 Download Word (.docx)",
         "btn_pdf": "📄 Download PDF (.pdf)",
-        "pdf_warning": "💡 Note: If GTK+ is not installed, download the Word file and save as PDF via Microsoft Word.",
-        "preview_label": "✍️ Preview & Live Edit (Changes will automatically update download files):",
-        "copy_hint": "👆 Click top right icon or select all to copy formatted plain text:",
-        "info_empty": "👈 Please paste CV text or upload a file on the left side to start.",
+        "preview_label": "✍️ Preview & Live Edit:",
+        "copy_hint": "👆 Click top right icon to copy formatted plain text:",
+        "info_empty": "👈 Please input CV text on the left and click '🚀 Format CV'.",
     },
 }
 
@@ -69,7 +70,6 @@ font_size = st.sidebar.slider(t["size_label"], 9, 14, 11)
 primary_color_hex = st.sidebar.color_picker(t["color_label"], "#1B365D")
 
 
-# HEX 色碼轉 RGB
 def hex_to_rgb(hex_str):
   hex_str = hex_str.lstrip("#")
   return tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))
@@ -124,7 +124,8 @@ KNOWN_HEADERS = [
     "個人信息",
     "聯絡資料",
     "教育背景",
-    "教育程度", "學歷背景",
+    "教育程度",
+    "學歷背景",
     "學歷資格",
     "學術獎項",
     "個人獎項",
@@ -159,7 +160,7 @@ def extract_candidate_filename(raw_text):
   return "CV_Candidate"
 
 
-# --- 4. 核心邏輯：文字清理、錯字修正與雜訊過濾 ---
+# --- 4. 核心邏輯：文字清理與錯字修正 ---
 def clean_and_format_cv(raw_text):
   if not raw_text.strip():
     return ""
@@ -170,21 +171,19 @@ def clean_and_format_cv(raw_text):
   for line in lines:
     line_s = line.strip()
 
-    # 過濾頁碼雜訊 (例如: 2 | P a g e, Page 1 of 4)
+    # 過濾頁碼雜訊
     if re.search(
         r"^\d+\s*\|\s*P\s*a\s*g\s*e$", line_s, re.IGNORECASE
     ) or re.match(r"^Page\s+\d+\s+of\s+\d+$", line_s, re.IGNORECASE):
       continue
 
-    # 修正 PDF/OCR 拆散文字錯字
+    # 修正常見 OCR 錯字與格式
     line_s = re.sub(r"\bpply\b", "Apply", line_s, flags=re.IGNORECASE)
     line_s = re.sub(r"\b(\$\d+)\s+(\d+)\b", r"\1\2", line_s)
     line_s = re.sub(
         r"\b(C|c)\s+ompleted\b", "Completed", line_s, flags=re.IGNORECASE
     )
     line_s = re.sub(r"\bYa\s+n\b", "Yan", line_s)
-
-    # 清理多餘連鎖空格
     line_s = re.sub(r"[ \t]+", " ", line_s)
 
     cleaned_lines.append(line_s)
@@ -192,7 +191,7 @@ def clean_and_format_cv(raw_text):
   return "\n".join(cleaned_lines)
 
 
-# --- 5. 建立動態樣式 Word (.docx) 文件 ---
+# --- 5. 建立 Word (.docx) 文件 ---
 def create_docx(raw_text, font_name, size_pt, color_rgb):
   doc = docx.Document()
 
@@ -270,8 +269,8 @@ def create_docx(raw_text, font_name, size_pt, color_rgb):
   return buffer
 
 
-# --- 6. 建立動態樣式 HTML / PDF 文件 ---
-def create_html(raw_text, font_name, size_pt, color_hex):
+# --- 6. 純 Python PDF 生成引擎 (免 GTK+) ---
+def create_pdf_from_html(raw_text, font_name, size_pt, color_hex):
   lines = raw_text.splitlines()
 
   html_content = f"""
@@ -280,12 +279,12 @@ def create_html(raw_text, font_name, size_pt, color_hex):
     <head>
     <meta charset="utf-8">
     <style>
-        @page {{ size: A4; margin: 18mm 15mm; }}
-        body {{ font-family: '{font_name}', 'Microsoft JhengHei', sans-serif; color: #333333; line-height: 1.4; font-size: {size_pt}pt; }}
-        h1 {{ text-align: center; color: {color_hex}; font-size: {size_pt + 5.5}pt; margin-bottom: 15px; letter-spacing: 1px; }}
-        h2 {{ color: {color_hex}; border-bottom: 1.5px solid {color_hex}; font-size: {size_pt + 2.5}pt; margin-top: 16px; margin-bottom: 6px; padding-bottom: 2px; text-transform: uppercase; }}
+        @page {{ size: a4; margin: 18mm 15mm; }}
+        body {{ font-family: sans-serif; color: #333333; line-height: 1.4; font-size: {size_pt}pt; }}
+        h1 {{ text-align: center; color: {color_hex}; font-size: {size_pt + 5.5}pt; margin-bottom: 15px; }}
+        h2 {{ color: {color_hex}; border-bottom: 1.5px solid {color_hex}; font-size: {size_pt + 2.5}pt; margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; }}
         p {{ margin: 3px 0; }}
-        .bullet {{ margin-left: 18px; text-indent: -12px; }}
+        .bullet {{ margin-left: 18px; }}
         .label {{ font-weight: bold; color: {color_hex}; }}
     </style>
     </head>
@@ -329,50 +328,61 @@ def create_html(raw_text, font_name, size_pt, color_hex):
       html_content += f"<p>{line_str}</p>"
 
   html_content += "</body></html>"
-  return html_content
+
+  pdf_buffer = BytesIO()
+  pisa.CreatePDF(html_content, dest=pdf_buffer)
+  pdf_buffer.seek(0)
+  return pdf_buffer
 
 
-# --- 7. UI 介面佈局 ---
+# --- 7. UI 介面佈局 (利用 Form 包裹按鈕) ---
 col_in, col_out = st.columns([1, 1])
 
-if "cv_content" not in st.session_state:
-  st.session_state["cv_content"] = ""
+if "formatted_text" not in st.session_state:
+  st.session_state["formatted_text"] = ""
 
 with col_in:
   st.subheader(t["col_in_header"])
 
+  # 檔案上傳器
   uploaded_file = st.file_uploader(
       t["file_uploader_label"], type=["txt", "docx"]
   )
+  default_text = ""
   if uploaded_file is not None:
     if uploaded_file.type == "text/plain":
-      file_text = uploaded_file.read().decode("utf-8")
+      default_text = uploaded_file.read().decode("utf-8")
     elif (
         uploaded_file.type
         == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ):
       doc = docx.Document(uploaded_file)
-      file_text = "\n".join([p.text for p in doc.paragraphs])
+      default_text = "\n".join([p.text for p in doc.paragraphs])
 
-    st.session_state["cv_content"] = file_text
+  # 表單區塊：避免輸入時一直自動刷新
+  with st.form(key="cv_input_form"):
+    user_input = st.text_area(
+        t["col_in_label"],
+        value=default_text,
+        height=450,
+        placeholder=t["placeholder"],
+    )
+    # 專用提交按鈕：點擊後才觸發排版
+    submit_button = st.form_submit_button(
+        label=t["btn_format"], use_container_width=True
+    )
 
-  user_input = st.text_area(
-      t["col_in_label"],
-      value=st.session_state["cv_content"],
-      height=480,
-      placeholder=t["placeholder"],
-  )
+  if submit_button and user_input.strip():
+    st.session_state["formatted_text"] = clean_and_format_cv(user_input)
 
 with col_out:
   st.subheader(t["col_out_header"])
 
-  if user_input.strip():
-    formatted_result = clean_and_format_cv(user_input)
-
-    # 二次微調雙向同步框
+  if st.session_state["formatted_text"]:
+    # 允許在右側二次微調
     edited_result = st.text_area(
         t["preview_label"],
-        value=formatted_result,
+        value=st.session_state["formatted_text"],
         height=320,
         key="editable_preview",
     )
@@ -399,24 +409,18 @@ with col_out:
           use_container_width=True,
       )
 
-    # 匯出 PDF
+    # 匯出 PDF (純 Python 免 GTK+)
+    pdf_data = create_pdf_from_html(
+        edited_result, font_choice, font_size, primary_color_hex
+    )
     with btn_col2:
-      try:
-        from weasyprint import HTML
-
-        html_str = create_html(
-            edited_result, font_choice, font_size, primary_color_hex
-        )
-        pdf_data = HTML(string=html_str).write_pdf()
-        st.download_button(
-            label=t["btn_pdf"],
-            data=pdf_data,
-            file_name=pdf_filename,
-            mime="application/pdf",
-            use_container_width=True,
-        )
-      except Exception:
-        st.caption(t["pdf_warning"])
+      st.download_button(
+          label=t["btn_pdf"],
+          data=pdf_data,
+          file_name=pdf_filename,
+          mime="application/pdf",
+          use_container_width=True,
+      )
 
     st.markdown(t["copy_hint"])
     st.code(edited_result, language="text")
