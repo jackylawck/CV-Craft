@@ -1,3 +1,5 @@
+# utils/renderer.py
+
 import html
 from io import BytesIO
 import re
@@ -9,7 +11,6 @@ from models.schemas import RenderConfig
 from utils.logger import logger
 from utils.parser import is_header_line
 
-# 導入 ReportLab 核心套件
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -17,19 +18,17 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate
 
-# 🎯 註冊 ReportLab 內建 CJK 中文字型 (免安裝外部字型，全平台/雲端通用)
+# 🎯 強制註冊並使用 CJK 字型，徹底解決中文方塊問題
 try:
   pdfmetrics.registerFont(UnicodeCIDFont("STHeiti-Light"))
   PDF_FONT = "STHeiti-Light"
 except Exception as e:
-  logger.warning("無法註冊 CJK 字型，降級為 Helvetica: %s", str(e))
+  logger.warning("無法註冊 CJK 字型: %s", str(e))
   PDF_FONT = "Helvetica"
 
 
 def create_docx(raw_text: str, config: RenderConfig) -> bytes:
-  logger.info("正生成 Word (.docx) 檔案...")
   doc = docx.Document()
-
   for section in doc.sections:
     section.top_margin = Inches(0.8)
     section.bottom_margin = Inches(0.8)
@@ -96,9 +95,7 @@ def create_docx(raw_text: str, config: RenderConfig) -> bytes:
 
 
 def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
-  logger.info("正使用 ReportLab (CJK 支援) 生成 PDF 檔案...")
   buffer = BytesIO()
-
   doc = SimpleDocTemplate(
       buffer,
       pagesize=A4,
@@ -115,7 +112,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   r, g, b = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
   brand_color = colors.Color(r / 255.0, g / 255.0, b / 255.0)
 
-  # 套用中英文兼容字型 PDF_FONT
+  # 指定 PDF_FONT (STHeiti-Light)
   title_style = ParagraphStyle(
       "DocTitle",
       parent=styles["Normal"],
