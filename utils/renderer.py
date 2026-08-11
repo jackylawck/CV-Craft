@@ -9,11 +9,21 @@ from models.schemas import RenderConfig
 from utils.logger import logger
 from utils.parser import is_header_line
 
-# 導入 ReportLab 核心套件 (純 Python，100% 雲端相容)
+# 導入 ReportLab 核心套件
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate
+
+# 🎯 註冊 ReportLab 內建 CJK 中文字型 (免安裝外部字型，全平台/雲端通用)
+try:
+  pdfmetrics.registerFont(UnicodeCIDFont("STHeiti-Light"))
+  PDF_FONT = "STHeiti-Light"
+except Exception as e:
+  logger.warning("無法註冊 CJK 字型，降級為 Helvetica: %s", str(e))
+  PDF_FONT = "Helvetica"
 
 
 def create_docx(raw_text: str, config: RenderConfig) -> bytes:
@@ -86,10 +96,9 @@ def create_docx(raw_text: str, config: RenderConfig) -> bytes:
 
 
 def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
-  logger.info("正使用 ReportLab 生成 PDF 檔案...")
+  logger.info("正使用 ReportLab (CJK 支援) 生成 PDF 檔案...")
   buffer = BytesIO()
 
-  # 建立標準 A4 文件
   doc = SimpleDocTemplate(
       buffer,
       pagesize=A4,
@@ -102,27 +111,26 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   story = []
   styles = getSampleStyleSheet()
 
-  # HEX 色碼轉 ReportLab Color
   hex_color = config.primary_color_hex.lstrip("#")
   r, g, b = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
   brand_color = colors.Color(r / 255.0, g / 255.0, b / 255.0)
 
-  # 定義各級樣式
+  # 套用中英文兼容字型 PDF_FONT
   title_style = ParagraphStyle(
       "DocTitle",
       parent=styles["Normal"],
-      fontName="Helvetica-Bold",
+      fontName=PDF_FONT,
       fontSize=config.font_size + 6,
       leading=config.font_size + 8,
       textColor=brand_color,
-      alignment=1,  # 居中
+      alignment=1,
       spaceAfter=12,
   )
 
   header_style = ParagraphStyle(
       "SectionHeader",
       parent=styles["Normal"],
-      fontName="Helvetica-Bold",
+      fontName=PDF_FONT,
       fontSize=config.font_size + 2,
       leading=config.font_size + 4,
       textColor=brand_color,
@@ -134,7 +142,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   body_style = ParagraphStyle(
       "BodyText",
       parent=styles["Normal"],
-      fontName="Helvetica",
+      fontName=PDF_FONT,
       fontSize=config.font_size,
       leading=config.font_size + 3,
       textColor=colors.HexColor("#333333"),
