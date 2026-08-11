@@ -73,3 +73,10 @@ page_no_patterns:
   - "^\\d+\\s*\\|\\s*P\\s*a\\s*g\\s*e$"
   - "^Page\\s+\\d+\\s+of\\s+\\d+$"
   - "^\\d+\\s*/\\s*\\d+$"
+
+# 🆕 雜訊過濾清單
+ignore_patterns:
+  - "^STRICTLY CONFIDENTIAL$"
+  - "^CONFIDENTIAL$"
+  - "^DRAFT$"
+  - "^PRIVATE & CONFIDENTIAL$"
