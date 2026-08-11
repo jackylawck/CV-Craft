@@ -34,16 +34,18 @@ def is_header_line(line_str: str) -> bool:
 
   known_headers = CONFIG.get("headers", [])
 
+  # 1. 精確比對
   if clean_str in known_headers:
     return True
 
+  # 2. 規則比對：全大寫且長度適中
   if clean_str.isupper() and len(clean_str) < 35:
+    # 僅對 4 ~ 32 字元的句子進行 CPU 吃重的模糊比對，避免效能流失
+    if 4 <= len(clean_str) <= 32 and FUZZY_AVAILABLE:
+      for h in known_headers:
+        if fuzz.ratio(clean_str, h) > 85:
+          return True
     return True
-
-  if FUZZY_AVAILABLE:
-    for h in known_headers:
-      if fuzz.ratio(clean_str, h) > 85:
-        return True
 
   return False
 
@@ -89,15 +91,23 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
   detected_headers = []
 
   page_patterns = CONFIG.get("page_no_patterns", [])
+  ignore_patterns = CONFIG.get("ignore_patterns", [])
   ocr_replacements = CONFIG.get("ocr_replacements", [])
 
   for line in lines:
     line_s = line.strip()
 
+    # 1. 過濾頁碼雜訊
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in page_patterns):
       logger.debug("已過濾頁碼雜訊: %s", line_s)
       continue
 
+    # 2. 過濾 Confidential / Draft 等雜訊
+    if any(re.search(pat, line_s, re.IGNORECASE) for pat in ignore_patterns):
+      logger.debug("已過濾無關雜訊: %s", line_s)
+      continue
+
+    # 3. 執行 OCR 錯字替換
     for item in ocr_replacements:
       line_s = re.sub(
           item["pattern"], item["replacement"], line_s, flags=re.IGNORECASE
