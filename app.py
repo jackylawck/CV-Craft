@@ -1,26 +1,25 @@
 import os
 import sys
 
-# Add project root directory to Python path for seamless cloud deployment
+# 將專案根目錄加入 Python 搜尋路徑
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import docx
-import streamlit as st
-
 from models.schemas import RenderConfig
+import streamlit as st
 from utils.logger import logger
 from utils.parser import extract_candidate_filename, parse_and_clean_cv
 from utils.renderer import create_docx, create_pdf
 
-# Basic page configuration
+# 頁面基本配置
 st.set_page_config(
     page_title="CV-Craft 排歷匠",
     page_icon="📄",
     layout="wide",
-    initial_sidebar_state="collapsed",  # Keep collapsed by default on mobile for better view
+    initial_sidebar_state="collapsed",  # 手機端預設摺疊側邊欄以獲得最佳視覺
 )
 
-# Sidebar settings
+# 側邊欄樣式設定
 st.sidebar.header("Settings / 設定")
 font_choice = st.sidebar.selectbox(
     "內文字型 / Font",
@@ -29,33 +28,33 @@ font_choice = st.sidebar.selectbox(
 font_size = st.sidebar.slider("內文字級 (pt)", 9, 14, 11)
 primary_color_hex = st.sidebar.color_picker("標題主色", "#1B365D")
 
-# Render configuration
+# 建立渲染配置模型
 render_config = RenderConfig(
     font_name=font_choice,
     font_size=font_size,
     primary_color_hex=primary_color_hex,
 )
 
-# Main Title Header
+# 主標題區塊
 st.title("CV-Craft 排歷匠 📄")
 st.caption(
     "Instant, safe & offline CV formatting tool | 100% 本地記憶體運算，絕不外洩 PII"
 )
 
-# Initialize Session State
-if "raw_text_input" not in st.session_state:
-  st.session_state["raw_text_input"] = ""
+# 初始化 Session State
+if "raw_text_area" not in st.session_state:
+  st.session_state["raw_text_area"] = ""
 if "formatted_text" not in st.session_state:
   st.session_state["formatted_text"] = ""
 
-# 📱 Mobile-First Responsive Tabs Layout
+# 📱 移動端優先頁籤佈局
 tab_input, tab_output = st.tabs(["📝 1. 輸入與編輯", "📄 2. 預覽與下載"])
 
-# --- TAB 1: Input & Edit ---
+# --- TAB 1: 輸入與編輯 ---
 with tab_input:
   st.subheader("1. 輸入或上傳履歷內容")
 
-  # File Uploader
+  # 檔案上傳組件
   uploaded_file = st.file_uploader(
       "上傳檔案 (.docx 或 .txt)", type=["txt", "docx"]
   )
@@ -63,27 +62,25 @@ with tab_input:
   if uploaded_file:
     try:
       if uploaded_file.type == "text/plain":
-        st.session_state["raw_text_input"] = uploaded_file.read().decode(
-            "utf-8"
-        )
+        st.session_state["raw_text_area"] = uploaded_file.read().decode("utf-8")
       else:
         doc = docx.Document(uploaded_file)
-        st.session_state["raw_text_input"] = "\n".join(
+        st.session_state["raw_text_area"] = "\n".join(
             [p.text for p in doc.paragraphs]
         )
     except Exception as e:
       logger.error("讀取上傳檔案失敗: %s", str(e))
       st.error(f"檔案讀取失敗: {e}")
 
-  # Mobile-friendly 1:1 Action Toolbar
+  # 1:1 操作工具列 (清空 & 複製)
   btn_col1, btn_col2 = st.columns(2)
 
+  # 📌 正確清空回呼：直接重設文字框 Key 與排版狀態
+  def clear_text():
+    st.session_state["raw_text_area"] = ""
+    st.session_state["formatted_text"] = ""
+
   with btn_col1:
-
-    def clear_text():
-      st.session_state["raw_text_input"] = ""
-      st.session_state["formatted_text"] = ""
-
     st.button(
         "🧹 清空內容",
         on_click=clear_text,
@@ -92,21 +89,21 @@ with tab_input:
     )
 
   with btn_col2:
-    if st.session_state["raw_text_input"].strip():
+    current_val = st.session_state.get("raw_text_area", "")
+    if current_val.strip():
       st.popover("📋 複製文字", use_container_width=True).code(
-          st.session_state["raw_text_input"], language="text"
+          current_val, language="text"
       )
     else:
       st.button("📋 複製文字", disabled=True, use_container_width=True)
 
-  # Text Form
+  # 主輸入表單 (Form)
   with st.form(key="cv_input_form"):
     user_input = st.text_area(
         "貼入原始文字：",
-        value=st.session_state["raw_text_input"],
         height=380,
         placeholder="RESUME...",
-        key="raw_text_area",
+        key="raw_text_area",  # 自動雙向綁定 session_state
     )
 
     submit_button = st.form_submit_button(
@@ -114,7 +111,6 @@ with tab_input:
     )
 
   if submit_button and user_input.strip():
-    st.session_state["raw_text_input"] = user_input
     with st.spinner("⚡ 正在解析結構與處理文字..."):
       try:
         parse_result = parse_and_clean_cv(user_input)
@@ -127,7 +123,7 @@ with tab_input:
         logger.exception("排版過程中發生錯誤")
         st.error(f"處理失敗: {e}")
 
-# --- TAB 2: Preview & Export ---
+# --- TAB 2: 預覽與匯出 ---
 with tab_output:
   st.subheader("2. 排版結果與匯出")
   if st.session_state["formatted_text"]:
