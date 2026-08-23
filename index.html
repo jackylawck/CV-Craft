@@ -1,8 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-HK">
+<html lang="zh-HK" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- 🔒 1. Content Security Policy (CSP) 與安全防護 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none';">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+
+    <!-- ⚡ 2. 效能優化 (Preconnect & DNS-Prefetch) -->
+    <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.tailwindcss.com">
     
     <!-- Author & Credit Code-Level Annotation for SEO (羅子淇 Jacky Law) -->
     <!-- Author: 羅子淇 Jacky Law | Personal Site: https://jackylawck.github.io/jackylawck/ -->
@@ -10,17 +19,17 @@
     <!-- Google Search Console 驗證標籤 -->
     <meta name="google-site-verification" content="JZ5UohX-CcP_fQV0_DI9VadkKY4ZoTTkUifL88-fIcY" />
     
-    <!-- 精準 SEO 設定 (Google 搜尋結果格式優化) -->
-    <title>CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站</title>
-    <meta name="description" content="CV-Craft 排歷匠 — 輕量、高效且極致資安保護（Zero Data Retention）的履歷自動排版工作站。支援文字貼入與 DOCX/TXT 上傳，自動清洗 OCR 雜訊與異常空格，支援 CJK 中文字型與一鍵生成標準 Word (.docx) 及 PDF (.pdf) 文件。">
+    <!-- 精準 SEO 設定 (動態受 JS 控制) -->
+    <title id="page-title">CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站</title>
+    <meta id="page-desc" name="description" content="CV-Craft 排歷匠 — 輕量、高效且極致資安保護（Zero Data Retention）的履歷自動排版工作站。支援文字貼入與 DOCX/TXT 上傳，自動清洗 OCR 雜訊與異常空格，一鍵生成標準 Word (.docx) 及 PDF (.pdf) 文件。">
     <meta name="keywords" content="CV-Craft, 排歷匠, 履歷排版, CV排版, Resume Formatting, Word轉PDF, OCR清洗, Privacy-by-Design, Zero Data Retention, Streamlit, ReportLab, Enterprise Security">
     <meta name="author" content="CV-Craft Workstation (https://jackylawck.github.io/jackylawck/)">
     <link rel="author" href="https://jackylawck.github.io/jackylawck/" />
     <link rel="me" href="https://jackylawck.github.io/jackylawck/" />
 
-    <!-- Open Graph 社群與多語言標籤 -->
+    <!-- Open Graph 社群標籤 -->
     <meta property="og:title" content="CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站">
-    <meta property="og:description" content="100% 本地記憶體運算，極致資安防護（Zero Data Retention），絕不外洩 PII 個人資料。自動修復空格錯字、過濾雜訊、精準命名檔名，一鍵匯出高質感 Word 與 PDF 履歷。">
+    <meta property="og:description" content="100% 本地記憶體運算，極致資安防護（Zero Data Retention），絕不外洩 PII 個人資料。一鍵匯出高質感 Word 與 PDF 履歷。">
     <meta property="og:url" content="https://jackylawck.github.io/CV-Craft/">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="zh_HK">
@@ -34,7 +43,7 @@
       "@type": "WebApplication",
       "name": "CV-Craft 排歷匠",
       "url": "https://cv-craft.streamlit.app/",
-      "description": "Instant, safe & offline CV formatting tool with zero data retention and enterprise security standards.",
+      "description": "Instant, safe & privacy-preserving CV formatting tool with zero persistent retention.",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "All"
     }
@@ -57,20 +66,42 @@
             }
         }
     </script>
+
+    <!-- 🖨️ 打印專用樣式 (@media print) -->
+    <style>
+        @media print {
+            nav, footer, #lang-toggle, .no-print {
+                display: none !important;
+            }
+            body {
+                background: white !important;
+                color: black !important;
+            }
+            .border-slate-800, .border-slate-900 {
+                border-color: #ccc !important;
+            }
+        }
+    </style>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased selection:bg-blue-600 selection:text-white">
 
-    <!-- 導覽列 Navigation -->
-    <nav class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <!-- 導覽列 Navigation (ARIA 友善 + 平滑跳轉) -->
+    <nav aria-label="主要導覽" class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
             <div class="font-bold text-lg tracking-tight text-white flex items-center gap-2">
-                <span>📄 CV-Craft 排歷匠</span>
+                <span aria-hidden="true">📄</span>
+                <span>CV-Craft 排歷匠</span>
                 <span class="text-xs text-blue-400 font-normal border border-blue-800/60 bg-blue-950/40 px-2 py-0.5 rounded">v1.2 Enterprise-Ready</span>
             </div>
-            <div class="flex items-center space-x-6 text-sm font-medium text-slate-400">
-                <a href="#features" class="hover:text-blue-400 transition-colors">Features / 核心特色</a>
-                <a href="#security" class="hover:text-blue-400 transition-colors">Security / 資安治理</a>
-                <a href="https://github.com/jackylawck/CV-Craft" target="_blank" class="hover:text-white transition-colors">GitHub Repo</a>
+            <div class="flex items-center space-x-4 sm:space-x-6 text-sm font-medium text-slate-400">
+                <a href="#features" data-i18n="nav-features" class="hover:text-blue-400 transition-colors">Features / 核心特色</a>
+                <a href="#security" data-i18n="nav-security" class="hover:text-blue-400 transition-colors">Security / 資安治理</a>
+                <a href="https://github.com/jackylawck/CV-Craft" target="_blank" rel="noopener noreferrer" aria-label="前往 GitHub 原始碼儲存庫" class="hover:text-white transition-colors">GitHub</a>
+                
+                <!-- 🌐 語言切換按鈕 (含微互動動畫) -->
+                <button id="lang-toggle" onclick="toggleLanguage()" aria-label="切換語言 Switch Language" class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-700 bg-slate-800 text-slate-200 hover:border-blue-500 hover:text-white hover:scale-105 active:scale-95 transition-all duration-150 shadow-sm">
+                    English
+                </button>
             </div>
         </div>
     </nav>
@@ -79,30 +110,30 @@
     <header class="py-20 px-6 max-w-6xl mx-auto text-center sm:text-left">
         <div class="max-w-3xl">
             <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400 text-xs font-semibold mb-6">
-                <span class="flex h-2 w-2 rounded-full bg-blue-400 animate-pulse"></span>
-                Enterprise Security & Privacy-Preserving CV Formatting
+                <span class="flex h-2 w-2 rounded-full bg-blue-400 animate-pulse" aria-hidden="true"></span>
+                <span data-i18n="hero-tag">Enterprise Security & Privacy-Preserving CV Formatting</span>
             </div>
             <h1 class="text-4xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight mb-6">
-                CV-Craft 排歷匠<br>
-                <span class="text-blue-400 text-3xl sm:text-4xl">Enterprise Security CV Workstation</span>
+                <span data-i18n="hero-title-1">CV-Craft 排歷匠</span><br>
+                <span class="text-blue-400 text-3xl sm:text-4xl" data-i18n="hero-title-2">Enterprise Security CV Workstation</span>
             </h1>
             
             <div class="space-y-3 text-slate-300 leading-relaxed mb-8">
-                <p class="text-base sm:text-lg">
-                    主打資安與零數據留存（Zero Data Retention）的履歷自動格式化工作站 — 100% 本地記憶體運算，自動重組空格拆散單字、過濾 OCR 雜訊，並精準渲染中英文履歷至 Word (.docx) 與 PDF (.pdf)。
+                <p class="text-base sm:text-lg" data-i18n="hero-desc-1">
+                    主打資安與零數據留存（Zero Data Retention）的履歷自動格式化工作站 — 伺服器 RAM 記憶體隔離運算，自動重組空格拆散單字、過濾 OCR 雜訊，並精準渲染中英文履歷至 Word (.docx) 與 PDF (.pdf)。
                 </p>
-                <p class="text-sm sm:text-base text-slate-400 italic">
-                    Enterprise-grade privacy-preserving CV parsing & formatting station powered by python-docx & ReportLab CJK engine. Zero persistent data retention guaranteed.
+                <p class="text-sm sm:text-base text-slate-400 italic" data-i18n="hero-desc-2">
+                    Enterprise-grade privacy-preserving CV parsing & formatting station powered by python-docx & ReportLab. Zero persistent data retention guaranteed.
                 </p>
             </div>
             
-            <!-- 行動按鈕 -->
-            <div class="flex flex-wrap gap-4 justify-center sm:justify-start">
-                <a href="https://cv-craft.streamlit.app" target="_blank" rel="noopener" class="px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center gap-2">
-                    🚀 即刻體驗 Web App / Launch App
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            <!-- 行動按鈕 (含觸覺式縮放動畫 hover:scale-105 active:scale-95) -->
+            <div class="flex flex-wrap gap-4 justify-center sm:justify-start no-print">
+                <a href="https://cv-craft.streamlit.app" target="_blank" rel="noopener noreferrer" aria-label="啟動 CV-Craft Web 應用程式" class="px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold hover:scale-105 active:scale-95 transition-all duration-150 shadow-lg shadow-blue-600/30 flex items-center gap-2">
+                    <span data-i18n="btn-launch">🚀 即刻體驗 Web App / Launch App</span>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                 </a>
-                <a href="https://github.com/jackylawck/CV-Craft" target="_blank" rel="noopener" class="px-6 py-4 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium transition-all">
+                <a href="https://github.com/jackylawck/CV-Craft" target="_blank" rel="noopener noreferrer" aria-label="查看 GitHub 開源專案" class="px-6 py-4 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300 font-medium hover:scale-105 active:scale-95 transition-all duration-150">
                     GitHub Source Code
                 </a>
             </div>
@@ -110,7 +141,7 @@
     </header>
 
     <!-- Topics & Frameworks 標籤牆 -->
-    <section class="py-6 border-y border-slate-900 bg-slate-900/30">
+    <section aria-label="技術標籤" class="py-6 border-y border-slate-900 bg-slate-900/30">
         <div class="max-w-6xl mx-auto px-6 flex flex-wrap items-center justify-center sm:justify-start gap-2">
             <span class="text-xs text-slate-400 font-semibold mr-2">Security & Tech Stack:</span>
             <span class="px-3 py-1 rounded-full text-xs font-mono bg-blue-950/60 text-blue-400 border border-blue-800/50">zero-data-retention</span>
@@ -122,30 +153,30 @@
         </div>
     </section>
 
-    <!-- 核心特色 Section (資安優先 + 陳大文 Chan Tai Man 匿名範例) -->
+    <!-- 核心特色 Section -->
     <section id="features" class="py-16 px-6 max-w-6xl mx-auto">
-        <h2 class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-8">Key Capabilities / 核心特色</h2>
+        <h2 class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-8" data-i18n="feat-heading">Key Capabilities / 核心特色</h2>
         <div class="grid md:grid-cols-3 gap-6">
-            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3">
-                <div class="text-3xl">🛡️</div>
-                <h3 class="text-lg font-bold text-white">企業級資安與零數據留存<br><span class="text-xs text-blue-400 font-normal">Zero Data Retention (ZDR)</span></h3>
-                <p class="text-sm text-slate-400 leading-relaxed">
-                    所有履歷解析與文件生成完全於記憶體內（In-Memory）運算完成，絕不寫入任何資料庫或硬碟快取，會話結束即刻徹底銷毀。<br>
+            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3 hover:border-slate-700 transition-colors">
+                <div class="text-3xl" aria-hidden="true">🛡️</div>
+                <h3 class="text-lg font-bold text-white" data-i18n="feat-1-title">企業級資安與零數據留存<br><span class="text-xs text-blue-400 font-normal">Zero Data Retention (ZDR)</span></h3>
+                <p class="text-sm text-slate-400 leading-relaxed" data-i18n="feat-1-desc">
+                    所有履歷解析與文件生成完全於伺服器記憶體內（RAM）運算完成，絕不寫入任何資料庫或硬碟快取，會話結束即刻徹底銷毀。<br>
                     <span class="text-xs text-slate-500 block mt-1">100% in-memory architecture guaranteeing no candidate PII persistence on storage systems.</span>
                 </p>
             </div>
-            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3">
-                <div class="text-3xl">🧹</div>
-                <h3 class="text-lg font-bold text-white">智慧單字重組與 OCR 雜訊清洗<br><span class="text-xs text-blue-400 font-normal">Smart Word & Character Repair</span></h3>
-                <p class="text-sm text-slate-400 leading-relaxed">
+            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3 hover:border-slate-700 transition-colors">
+                <div class="text-3xl" aria-hidden="true">🧹</div>
+                <h3 class="text-lg font-bold text-white" data-i18n="feat-2-title">智慧單字重組與 OCR 雜訊清洗<br><span class="text-xs text-blue-400 font-normal">Smart Word & Character Repair</span></h3>
+                <p class="text-sm text-slate-400 leading-relaxed" data-i18n="feat-2-desc">
                     自動修復 PDF/OCR 複製失真導致被空格拆散的英文單字與姓名（例如將被拆散的 <code class="text-blue-300 font-mono">C h a n T a i M a n</code> 復原為 <code class="text-blue-300 font-mono">Chan Tai Man</code> [陳大文]、<code class="text-blue-300 font-mono">M o b i l e</code> 復原為 <code class="text-blue-300 font-mono">Mobile</code>），並過濾特殊亂碼圖示與獨立頁碼雜訊。<br>
                     <span class="text-xs text-slate-500 block mt-1">Automatically repairs broken English words and names caused by OCR/PDF copy-paste issues.</span>
                 </p>
             </div>
-            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3">
-                <div class="text-3xl">📱</div>
-                <h3 class="text-lg font-bold text-white">手機端友善與雙格式匯出<br><span class="text-xs text-blue-400 font-normal">Mobile-First UI & Dual Export</span></h3>
-                <p class="text-sm text-slate-400 leading-relaxed">
+            <div class="p-6 rounded-2xl border border-slate-800 bg-slate-900/40 space-y-3 hover:border-slate-700 transition-colors">
+                <div class="text-3xl" aria-hidden="true">📱</div>
+                <h3 class="text-lg font-bold text-white" data-i18n="feat-3-title">手機端友善與雙格式匯出<br><span class="text-xs text-blue-400 font-normal">Mobile-First UI & Dual Export</span></h3>
+                <p class="text-sm text-slate-400 leading-relaxed" data-i18n="feat-3-desc">
                     採用 <code class="text-blue-300 font-mono">st.tabs</code> 頁籤設計，手機操作無須漫長滑動。支援自動對齊大標題、自動提取人名命名檔案，並可一鍵下載 Word (.docx) 與 PDF (.pdf)。<br>
                     <span class="text-xs text-slate-500 block mt-1">Features tab-based responsive navigation, automatic candidate file naming, and dual DOCX/PDF downloads.</span>
                 </p>
@@ -157,19 +188,19 @@
     <section id="security" class="py-16 px-6 max-w-6xl mx-auto border-t border-slate-900">
         <div class="rounded-3xl border border-blue-900/40 bg-gradient-to-b from-blue-950/20 to-slate-900/40 p-8 sm:p-12">
             <h2 class="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                <span>🛡️</span> Zero Data Retention (ZDR) 隱私與資安保護架構
+                <span aria-hidden="true">🛡️</span> <span data-i18n="sec-heading">Zero Data Retention (ZDR) 隱私與資安保護架構</span>
             </h2>
             <div class="grid md:grid-cols-2 gap-8 text-sm text-slate-300">
                 <div class="space-y-2">
-                    <h4 class="font-semibold text-blue-400 text-base">🔒 100% 記憶體即時運算 (In-Memory Processing)</h4>
-                    <p class="leading-relaxed text-slate-400">
-                        所有履歷文字解析與文件生成完全在應用程式內存（In-Memory）完成，絕不安裝或寫入任何資料庫或硬碟快取。<br>
+                    <h4 class="font-semibold text-blue-400 text-base" data-i18n="sec-1-title">🔒 100% 記憶體即時運算 (In-Memory Processing)</h4>
+                    <p class="leading-relaxed text-slate-400" data-i18n="sec-1-desc">
+                        所有履歷文字解析與文件生成完全在伺服器 RAM 內存完成，絕不安裝或寫入任何資料庫或硬碟快取。<br>
                         <span class="text-xs text-slate-500 block mt-1">All formatting is performed strictly in memory. No database storage or persistent file retention.</span>
                     </p>
                 </div>
                 <div class="space-y-2">
-                    <h4 class="font-semibold text-blue-400 text-base">🔒 PII 個資零留存 (Privacy-by-Design)</h4>
-                    <p class="leading-relaxed text-slate-400">
+                    <h4 class="font-semibold text-blue-400 text-base" data-i18n="sec-2-title">🔒 PII 個資零留存 (Privacy-by-Design)</h4>
+                    <p class="leading-relaxed text-slate-400" data-i18n="sec-2-desc">
                         使用者貼入之求職者聯絡資料、工作經歷等敏感資訊（PII），在會話（Session）關閉後即刻自動銷毀，完全保障求職者隱私。<br>
                         <span class="text-xs text-slate-500 block mt-1">Candidate PII is never logged or exposed, conforming to privacy-by-design standards.</span>
                     </p>
@@ -183,5 +214,95 @@
         <p>© 2026 CV-Craft 排歷匠. Released under the MIT License.</p>
     </footer>
 
+    <!-- 🌐 雙語切換引擎 (支援動態 Meta 與 LocalStorage 偏好記憶) -->
+    <script>
+        const i18n = {
+            zh: {
+                "meta-title": "CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站",
+                "meta-desc": "CV-Craft 排歷匠 — 輕量、高效且極致資安保護（Zero Data Retention）的履歷自動排版工作站。支援文字貼入與 DOCX/TXT 上傳，自動清洗 OCR 雜訊與異常空格，一鍵生成標準 Word (.docx) 及 PDF (.pdf) 文件。",
+                "nav-features": "Features / 核心特色",
+                "nav-security": "Security / 資安治理",
+                "hero-tag": "Enterprise Security & Privacy-Preserving CV Formatting",
+                "hero-title-1": "CV-Craft 排歷匠",
+                "hero-title-2": "Enterprise Security CV Workstation",
+                "hero-desc-1": "主打資安與零數據留存（Zero Data Retention）的履歷自動格式化工作站 — 伺服器 RAM 記憶體隔離運算，自動重組空格拆散單字、過濾 OCR 雜訊，並精準渲染中英文履歷至 Word (.docx) 與 PDF (.pdf)。",
+                "hero-desc-2": "Enterprise-grade privacy-preserving CV parsing & formatting station powered by python-docx & ReportLab. Zero persistent data retention guaranteed.",
+                "btn-launch": "🚀 即刻體驗 Web App / Launch App",
+                "feat-heading": "Key Capabilities / 核心特色",
+                "feat-1-title": "企業級資安與零數據留存<br><span class=\"text-xs text-blue-400 font-normal\">Zero Data Retention (ZDR)</span>",
+                "feat-1-desc": "所有履歷解析與文件生成完全於伺服器記憶體內（RAM）運算完成，絕不寫入任何資料庫或硬碟快取，會話結束即刻徹底銷毀。<br><span class=\"text-xs text-slate-500 block mt-1\">100% in-memory architecture guaranteeing no candidate PII persistence on storage systems.</span>",
+                "feat-2-title": "智慧單字重組與 OCR 雜訊清洗<br><span class=\"text-xs text-blue-400 font-normal\">Smart Word & Character Repair</span>",
+                "feat-2-desc": "自動修復 PDF/OCR 複製失真導致被空格拆散的英文單字與姓名（例如將被拆散的 <code class=\"text-blue-300 font-mono\">C h a n T a i M a n</code> 復原為 <code class=\"text-blue-300 font-mono\">Chan Tai Man</code> [陳大文]、<code class=\"text-blue-300 font-mono\">M o b i l e</code> 復原為 <code class=\"text-blue-300 font-mono\">Mobile</code>），並過濾特殊亂碼圖示與獨立頁碼雜訊。<br><span class=\"text-xs text-slate-500 block mt-1\">Automatically repairs broken English words and names caused by OCR/PDF copy-paste issues.</span>",
+                "feat-3-title": "手機端友善與雙格式匯出<br><span class=\"text-xs text-blue-400 font-normal\">Mobile-First UI & Dual Export</span>",
+                "feat-3-desc": "採用 <code class=\"text-blue-300 font-mono\">st.tabs</code> 頁籤設計，手機操作無須漫長滑動。支援自動對齊大標題、自動提取人名命名檔案，並可一鍵下載 Word (.docx) 與 PDF (.pdf)。<br><span class=\"text-xs text-slate-500 block mt-1\">Features tab-based responsive navigation, automatic candidate file naming, and dual DOCX/PDF downloads.</span>",
+                "sec-heading": "Zero Data Retention (ZDR) 隱私與資安保護架構",
+                "sec-1-title": "🔒 100% 記憶體即時運算 (In-Memory Processing)",
+                "sec-1-desc": "所有履歷文字解析與文件生成完全在伺服器 RAM 內存完成，絕不安裝或寫入任何資料庫或硬碟快取。<br><span class=\"text-xs text-slate-500 block mt-1\">All formatting is performed strictly in memory. No database storage or persistent file retention.</span>",
+                "sec-2-title": "🔒 PII 個資零留存 (Privacy-by-Design)",
+                "sec-2-desc": "使用者貼入之求職者聯絡資料、工作經歷等敏感資訊（PII），在會話（Session）關閉後即刻自動銷毀，完全保障求職者隱私。<br><span class=\"text-xs text-slate-500 block mt-1\">Candidate PII is never logged or exposed, conforming to privacy-by-design standards.</span>",
+                "btn-lang": "English"
+            },
+            en: {
+                "meta-title": "CV-Craft Formatter | Privacy-Preserving Enterprise CV Workstation",
+                "meta-desc": "CV-Craft Formatter — Lightweight, secure, and privacy-preserving CV formatting tool with Zero Data Retention. Supports DOCX/TXT uploads, smart OCR repair, and one-click Word/PDF export.",
+                "nav-features": "Key Features",
+                "nav-security": "Security & Privacy",
+                "hero-tag": "Enterprise Security & Privacy-Preserving CV Formatting",
+                "hero-title-1": "CV-Craft Formatter",
+                "hero-title-2": "Smart Security Workstation",
+                "hero-desc-1": "Enterprise-grade CV formatting tool engineered with Zero Data Retention. Isolated In-Memory RAM computing automatically repairs spaced-out text, cleans OCR artifacts, and renders high-quality Word (.docx) and PDF (.pdf) documents.",
+                "hero-desc-2": "100% In-memory processing. Candidate PII is destroyed immediately upon session closure.",
+                "btn-launch": "🚀 Launch Web App",
+                "feat-heading": "Core Capabilities",
+                "feat-1-title": "Zero Data Retention (ZDR)<br><span class=\"text-xs text-blue-400 font-normal\">Enterprise Privacy Architecture</span>",
+                "feat-1-desc": "All parsing and document generation operations run strictly in volatile memory (RAM). No database or persistent storage is used.",
+                "feat-2-title": "Smart Word & Character Repair<br><span class=\"text-xs text-blue-400 font-normal\">Automated Cleaning Engine</span>",
+                "feat-2-desc": "Automatically repairs spaced-out characters (e.g., <code class=\"text-blue-300 font-mono\">C h a n T a i M a n</code> to <code class=\"text-blue-300 font-mono\">Chan Tai Man</code>) and removes OCR/PDF copy artifacts.",
+                "feat-3-title": "Mobile-First UI & Dual Export<br><span class=\"text-xs text-blue-400 font-normal\">Responsive Multi-Format Output</span>",
+                "feat-3-desc": "Tab-based responsive UI optimized for mobile devices. Supports intelligent header detection, candidate file naming, and one-click DOCX/PDF export.",
+                "sec-heading": "Zero Data Retention (ZDR) & Privacy Architecture",
+                "sec-1-title": "🔒 100% In-Memory RAM Processing",
+                "sec-1-desc": "Document formatting processes are isolated strictly in volatile RAM. No candidate records are retained.",
+                "sec-2-title": "🔒 Privacy-by-Design Compliance",
+                "sec-2-desc": "Sensitive candidate PII is purged upon session termination, preventing accidental data leakage.",
+                "btn-lang": "繁體中文"
+            }
+        };
+
+        // 讀取 LocalStorage 語系偏好，若無則預設為繁體中文
+        let currentLang = localStorage.getItem('cv-craft-lang') || 'zh';
+
+        function applyLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('cv-craft-lang', lang);
+            document.documentElement.lang = lang === 'zh' ? 'zh-HK' : 'en';
+            
+            const bundle = i18n[lang];
+            
+            // 動態更新 Meta Data 與 Title (神作級 SEO 支援)
+            document.title = bundle['meta-title'];
+            const metaDesc = document.getElementById('page-desc');
+            if (metaDesc) metaDesc.setAttribute('content', bundle['meta-desc']);
+            
+            // 動態更新頁面文字
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (bundle[key]) {
+                    el.innerHTML = bundle[key];
+                }
+            });
+            document.getElementById('lang-toggle').innerText = bundle['btn-lang'];
+        }
+
+        function toggleLanguage() {
+            const nextLang = currentLang === 'zh' ? 'en' : 'zh';
+            applyLanguage(nextLang);
+        }
+
+        // 初始化套用語系
+        document.addEventListener('DOMContentLoaded', () => {
+            applyLanguage(currentLang);
+        });
+    </script>
 </body>
 </html>
