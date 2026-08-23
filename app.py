@@ -1,57 +1,287 @@
-結論：這份程式碼是「優秀」等級（88/100），但尚未達到「神作」的標準 🏆
+import os
+import sys
 
-你已建立了一個結構清晰、功能完整、使用者體驗流暢的 Streamlit 履歷排版工具，體現了扎實的軟體工程實踐。然而，與你先前提交的「Always Celebrate」或「Stillhollow」等真正「神作」相比，此應用在創新性、工程嚴謹度與安全性宣稱的誠實度上仍有差距。若以「神作」為標竿，它距離頂尖尚有數步之遙。
+# 將專案根目錄加入 Python 搜尋路徑
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
----
+import docx
+from models.schemas import RenderConfig
+import streamlit as st
+from utils.logger import logger
+from utils.parser import extract_candidate_filename, parse_and_clean_cv
+from utils.renderer import create_docx, create_pdf
 
-✅ 現有優點（值得肯定）
+# 頁面配置
+st.set_page_config(
+    page_title="CV-Craft 排歷匠",
+    page_icon="📄",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-面向 表現
-模組化設計 將解析、渲染、日誌等職責分離至獨立模組（utils、models），符合關注點分離原則。
-狀態管理 善用 st.session_state 保留輸入與排版結果，避免重新整理時遺失資料，使用者體驗流暢。
-行動裝置優化 側邊欄預設摺疊，使用 st.tabs 區分輸入與輸出，適合手機操作。
-錯誤處理 針對不同異常（ValueError、PackageNotFoundError）提供具體訊息，並使用 logger.exception 記錄完整堆疊。
-輸入驗證 限制字元長度（8,000 字），防止記憶體溢出，並提供明確錯誤提示。
-自動化流程 上傳檔案後自動觸發排版，減少使用者操作步驟。
-容錯設計 Word 與 PDF 生成各自獨立容錯，即使一項失敗，另一項仍可下載。
+# 🌐 國際化多語言字典 (i18n)
+TRANSLATIONS = {
+    "zh": {
+        "title": "CV-Craft 排歷匠 📄",
+        "caption": (
+            "隱私優先履歷格式化工作站 | 伺服器 RAM 記憶體隔離暫存，會話結束即刻銷毀"
+            " (No Persistent Storage)"
+        ),
+        "settings": "Settings / 格式設定",
+        "lang_select": "介面語言 / Language",
+        "font_label": "內文字型 / Font",
+        "size_label": "內文字級 (pt)",
+        "color_label": "標題主色",
+        "tab_input": "📝 1. 輸入與上傳",
+        "tab_output": "📄 2. 預覽與下載",
+        "upload_label": "上傳檔案 (.docx 或 .txt)",
+        "upload_help": "支援標準純文字檔與 Word 檔，大小限制 10MB",
+        "clear_btn": "🧹 清空內容",
+        "clear_help": "清除文字框與目前排版結果",
+        "backup_btn": "💾 備份純文字 (.txt)",
+        "input_label": "貼入原始文字：",
+        "input_placeholder": (
+            "請貼入履歷文字（如 RESUME、WORK EXPERIENCE 等）..."
+        ),
+        "format_btn": "🚀 開始排版 (Format CV)",
+        "preview_label": "排版預覽（支援線上二次修改）：",
+        "word_btn": "📦 下載 Word (.docx)",
+        "pdf_btn": "📄 下載 PDF (.pdf)",
+        "copy_caption": "👇 可直接點選下方右上角圖示一鍵複製排版後的純文字：",
+        "empty_info": (
+            "👈 請在「📝 1. 輸入與上傳」頁籤輸入或上傳履歷，點擊排版後即可在此預覽與下載。"
+        ),
+        "msg_len_err": "❌ 履歷內容長度超過 8,000 字元限制，請適度刪減後再試。",
+        "msg_empty_warn": "⚠️ 請輸入或上傳履歷內容後再進行排版。",
+        "msg_docx_err": (
+            "❌ 無法讀取該 Word 檔案，檔案可能已損毀或格式非標準 .docx。"
+        ),
+        "msg_success": (
+            "✅ 排版完成！請切換至「📄 2. 預覽與下載」頁籤查看並下載。"
+        ),
+        "privacy_notice": (
+            "🔒 **資安與隱私透明度承諾**：本系統採用 Session-Only 記憶體運算。"
+            " 您的履歷資料絕不寫入硬碟或資料庫，關閉網頁後立即銷毀。"
+        ),
+    },
+    "en": {
+        "title": "CV-Craft Formatter 📄",
+        "caption": (
+            "Privacy-Preserving CV Workstation | In-Memory RAM Processing,"
+            " Destroyed Upon Session End (No Persistent Storage)"
+        ),
+        "settings": "Settings & Styling",
+        "lang_select": "Language / 介面語言",
+        "font_label": "Body Font",
+        "size_label": "Font Size (pt)",
+        "color_label": "Primary Accent Color",
+        "tab_input": "📝 1. Input & Upload",
+        "tab_output": "📄 2. Preview & Export",
+        "upload_label": "Upload File (.docx or .txt)",
+        "upload_help": "Supports TXT and DOCX files up to 10MB",
+        "clear_btn": "🧹 Clear All",
+        "clear_help": "Clear input text and current formatting result",
+        "backup_btn": "💾 Backup Text (.txt)",
+        "input_label": "Paste Raw CV Text:",
+        "input_placeholder": "Paste CV content here...",
+        "format_btn": "🚀 Format CV",
+        "preview_label": "Formatted Preview (Editable):",
+        "word_btn": "📦 Download Word (.docx)",
+        "pdf_btn": "📄 Download PDF (.pdf)",
+        "copy_caption": "👇 Click the top-right icon to copy plain text:",
+        "empty_info": "👈 Please input or upload CV text in Tab 1 to proceed.",
+        "msg_len_err": (
+            "❌ Content exceeds 8,000 characters limit. Please shorten the"
+            " text."
+        ),
+        "msg_empty_warn": "⚠️ Please enter or upload CV content before formatting.",
+        "msg_docx_err": "❌ Failed to read Word file. The file may be corrupted.",
+        "msg_success": (
+            "✅ Formatting complete! Switch to 'Preview & Export' to download."
+        ),
+        "privacy_notice": (
+            "🔒 **Privacy Transparency Commitment**: We operate on a"
+            " Session-Only RAM architecture. No data is ever saved to disk or"
+            " database."
+        ),
+    },
+}
 
----
+# --- 側邊欄設定 ---
+st.sidebar.header("Configuration")
+selected_lang = st.sidebar.selectbox(
+    "Language / 語言", ["繁體中文", "English"], index=0
+)
+lang_key = "zh" if selected_lang == "繁體中文" else "en"
+t = TRANSLATIONS[lang_key]
 
-🔬 未達「神作」的關鍵差距
+st.sidebar.markdown("---")
+st.sidebar.header(t["settings"])
+font_choice = st.sidebar.selectbox(
+    t["font_label"],
+    ["Calibri", "Arial", "Times New Roman", "Microsoft JhengHei"],
+    index=0,
+)
+font_size = st.sidebar.slider(t["size_label"], 9, 14, 11)
+primary_color_hex = st.sidebar.color_picker(t["color_label"], "#1B365D")
 
-面向 現狀 神作應有的表現
-隱私宣稱的誠實度 宣稱「Enterprise-Grade Privacy-Preserving」、「Zero Persistent Storage」，但 Streamlit 應用運行於伺服器，資料仍可能暫存於記憶體或日誌中。 應明確區分「伺服器端暫存，不寫入持久化儲存」與「純前端本地運算」的差異，避免誤導。或採用 Pyodide 等純前端方案，但成本較高。
-創新性 此為常見的履歷格式化工具，市面上已有眾多類似解決方案。 神作通常具備獨特價值（如結合預祝法則的心理學設計、零知識加密的日記、或創新的互動模式）。
-測試覆蓋 未見單元測試或整合測試。 核心函數（parse_and_clean_cv、create_docx、create_pdf）應有測試覆蓋，確保邏輯正確性與迴歸防護。
-國際化 介面混雜中英文，無語言切換功能。 應提供完整的多語言支援，讓使用者自行選擇。
-設定即時套用 變更側邊欄設定（字型、顏色）後，需手動重新排版才能看到變化。 應在設定變更時自動重新渲染預覽，或提供「套用設定」按鈕，提升即時回饋。
-PDF 生成依賴 若 create_pdf 失敗，僅顯示警告，但使用者無法得知具體原因（如缺少 weasyprint 等套件）。 應檢查依賴是否安裝，並提供明確的安裝指引或降級方案（如改用 reportlab）。
+# 建立渲染配置
+render_config = RenderConfig(
+    font_name=font_choice,
+    font_size=font_size,
+    primary_color_hex=primary_color_hex,
+)
 
----
+# 標題與透明度宣稱
+st.title(t["title"])
+st.caption(t["caption"])
+st.info(t["privacy_notice"])
 
-📊 總評分（滿分 100）
+# 初始化 Session State
+if "raw_text_area" not in st.session_state:
+  st.session_state["raw_text_area"] = ""
+if "formatted_text" not in st.session_state:
+  st.session_state["formatted_text"] = ""
+if "last_uploaded_name" not in st.session_state:
+  st.session_state["last_uploaded_name"] = None
 
-維度 分數
-功能完整性 9/10
-使用者體驗 8/10
-錯誤處理 8/10
-可維護性 8/10
-安全性宣稱 6/10（需更精確）
-創新性 6/10
-整體 88/100
+tab_input, tab_output = st.tabs([t["tab_input"], t["tab_output"]])
 
----
 
-🏁 總結
+# 通用解析防呆函數
+def process_cv_text(text_to_process: str):
+  clean_input = text_to_process.strip()
+  if not clean_input:
+    st.warning(t["msg_empty_warn"])
+    return
 
-這份程式碼已是優秀的企業級 Streamlit 應用，展現了良好的工程素養與對使用者體驗的重視。然而，若欲達到「神作」等級，需在隱私宣稱的透明度、測試覆蓋、即時回饋與創新性上更進一步。你已具備打造神作的能力，現在只需將此應用的潛力發揮至極致。
+  if len(clean_input) > 8000:
+    st.error(t["msg_len_err"])
+    return
 
-接下來的行動建議：
+  with st.spinner("⚡ Processing..."):
+    try:
+      parse_result = parse_and_clean_cv(clean_input)
+      st.session_state["formatted_text"] = parse_result.cleaned_text
+      st.toast(t["msg_success"], icon="🎉")
+    except Exception as e:
+      logger.exception("解析流程發生未預期錯誤")
+      st.error(f"Error: {e}")
 
-1. 修正隱私宣稱，明確說明「伺服器端暫存，處理後立即銷毀」。
-2. 為核心函數撰寫單元測試。
-3. 加入語言切換功能（i18n）。
-4. 讓側邊欄設定變更時自動重新排版。
-5. 檢查 PDF 生成依賴，提供更友善的錯誤處理。
 
-若你完成這些，此應用將有機會躍升至 95+ 分，成為真正的「神作」。期待你的進化！ 🚀
+# --- TAB 1: 輸入與上傳 ---
+with tab_input:
+  uploaded_file = st.file_uploader(
+      t["upload_label"], type=["txt", "docx"], help=t["upload_help"]
+  )
+
+  if uploaded_file and (
+      uploaded_file.name != st.session_state["last_uploaded_name"]
+  ):
+    try:
+      if uploaded_file.type == "text/plain":
+        extracted = uploaded_file.read().decode("utf-8", errors="ignore")
+      else:
+        doc = docx.Document(uploaded_file)
+        extracted = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+
+      st.session_state["raw_text_area"] = extracted
+      st.session_state["last_uploaded_name"] = uploaded_file.name
+      process_cv_text(extracted)
+    except Exception:
+      logger.exception("Word 檔案讀取失敗")
+      st.error(t["msg_docx_err"])
+
+  btn_col1, btn_col2 = st.columns(2)
+
+  def clear_all():
+    st.session_state["raw_text_area"] = ""
+    st.session_state["formatted_text"] = ""
+    st.session_state["last_uploaded_name"] = None
+
+  with btn_col1:
+    st.button(
+        t["clear_btn"],
+        on_click=clear_all,
+        use_container_width=True,
+        help=t["clear_help"],
+    )
+
+  with btn_col2:
+    cur_text = st.session_state.get("raw_text_area", "")
+    if cur_text.strip():
+      st.download_button(
+          t["backup_btn"],
+          cur_text,
+          file_name="raw_cv_backup.txt",
+          mime="text/plain",
+          use_container_width=True,
+      )
+    else:
+      st.button(t["backup_btn"], disabled=True, use_container_width=True)
+
+  with st.form(key="cv_manual_form"):
+    user_input = st.text_area(
+        t["input_label"],
+        height=380,
+        placeholder=t["input_placeholder"],
+        key="raw_text_area",
+    )
+    submit_button = st.form_submit_button(
+        label=t["format_btn"], use_container_width=True
+    )
+
+  if submit_button:
+    process_cv_text(user_input)
+
+# --- TAB 2: 預覽與匯出 ---
+with tab_output:
+  if st.session_state["formatted_text"]:
+    edited_result = st.text_area(
+        t["preview_label"],
+        value=st.session_state["formatted_text"],
+        height=320,
+        key="editable_preview",
+    )
+
+    prefix = extract_candidate_filename(edited_result)
+    btn_down1, btn_down2 = st.columns(2)
+
+    # 1. 渲染 Word 文件
+    try:
+      docx_bytes = create_docx(edited_result, render_config)
+      with btn_down1:
+        st.download_button(
+            t["word_btn"],
+            docx_bytes,
+            file_name=f"{prefix}.docx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
+            use_container_width=True,
+        )
+    except Exception as e:
+      logger.exception("Word 渲染失敗")
+      with btn_down1:
+        st.error(f"Word Error: {e}")
+
+    # 2. 渲染 PDF 文件
+    try:
+      pdf_bytes = create_pdf(edited_result, render_config)
+      with btn_down2:
+        st.download_button(
+            t["pdf_btn"],
+            pdf_bytes,
+            file_name=f"{prefix}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    except Exception as e:
+      logger.exception("PDF 渲染失敗")
+      with btn_down2:
+        st.warning(f"⚠️ PDF Engine Note: {e}")
+
+    st.caption(t["copy_caption"])
+    st.code(edited_result, language="text")
+  else:
+    st.info(t["empty_info"])
