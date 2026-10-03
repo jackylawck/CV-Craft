@@ -1,5 +1,9 @@
+# utils/renderer.py
+
 import html
 from io import BytesIO
+import os
+from pathlib import Path
 import re
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -14,15 +18,50 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate
 
-# 🎯 強制註冊並使用 CJK 字型
-try:
-  pdfmetrics.registerFont(UnicodeCIDFont("STHeiti-Light"))
-  PDF_FONT = "STHeiti-Light"
-except Exception as e:
-  logger.warning("無法註冊 CJK 字型: %s", str(e))
-  PDF_FONT = "Helvetica"
+# ==========================================
+# 🔤 跨平台 CJK TrueType 字型載入器
+# ==========================================
+PDF_FONT = "Helvetica"
+
+
+def init_cjk_font() -> str:
+  """優先搜尋並註冊支援繁簡中文的 TrueType 字型，徹底消除黑塊。"""
+  # 常見 Windows 與 Linux 中文字型路徑
+  candidate_fonts = [
+      # Windows 字型路徑 (繁體/簡體)
+      r"C:\Windows\Fonts\msjh.ttc",  # 微軟正黑體 (Microsoft JhengHei)
+      r"C:\Windows\Fonts\msyh.ttc",  # 微軟雅黑 (Microsoft YaHei)
+      r"C:\Windows\Fonts\simsun.ttc",  # 宋體
+      # Linux / Docker 字型路徑 (Dockerfile 中已安裝的文泉驛)
+      "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+      "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+      "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+  ]
+
+  for font_path in candidate_fonts:
+    if os.path.exists(font_path):
+      try:
+        font_name = "SystemCJKFont"
+        pdfmetrics.registerFont(TTFont(font_name, font_path))
+        logger.info(f"成功註冊系統 TTF/TTC 中文字型: {font_path}")
+        return font_name
+      except Exception as e:
+        logger.warning(f"嘗試載入字型 {font_path} 失敗: {e}")
+
+  # 若無本地字型檔，則回退至 ReportLab 內建 CIDFont
+  try:
+    pdfmetrics.registerFont(UnicodeCIDFont("STHeiti-Light"))
+    logger.info("註冊 ReportLab 內建 CIDFont: STHeiti-Light")
+    return "STHeiti-Light"
+  except Exception as e:
+    logger.error(f"無法註冊任何 CJK 字型: {e}")
+    return "Helvetica"
+
+
+PDF_FONT = init_cjk_font()
 
 
 def create_docx(raw_text: str, config: RenderConfig) -> bytes:
@@ -106,7 +145,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   story = []
   styles = getSampleStyleSheet()
 
-  # 1. 直接重寫全局 Normal 字型，根絕所有回退風險
+  # 強制將基礎樣式綁定為支援中文的實體字型
   styles["Normal"].fontName = PDF_FONT
 
   hex_color = config.primary_color_hex.lstrip("#")
@@ -149,7 +188,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   bullet_style = ParagraphStyle(
       "BulletText",
       parent=body_style,
-      fontName=PDF_FONT,  # 顯式指定，防止繼承回退
+      fontName=PDF_FONT,
       leftIndent=15,
       firstLineIndent=-10,
       spaceAfter=3,
@@ -178,7 +217,6 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
         )
       continue
 
-    # 列表項目處理
     if (
         line_str.startswith("➢")
         or line_str.startswith("-")
@@ -186,8 +224,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
     ):
       clean_item = re.sub(r"^[➢\-•]\s*", "&bull; ", safe_line)
       story.append(Paragraph(clean_item, bullet_style))
-
-    # 冒號鍵值標籤處理：注意不可用 <b> 標籤包覆中文字型，改用主題顏色強調區分
+    # 冒號前標籤使用顏色區隔，切勿使用 <b> 標籤以防字型退回
     elif ":" in line_str and len(line_str.split(":")[0]) < 25:
       parts = safe_line.split(":", 1)
       formatted_p = (
