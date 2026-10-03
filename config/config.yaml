@@ -1,11 +1,12 @@
 app:
   title: "CV-Craft 排歷匠"
-  subtitle: "Instant, safe & offline CV formatting tool"
+  subtitle: "Privacy-Preserving CV Formatter | Zero Persistent Retention"
   default_font: "Calibri"
   default_font_size: 11
   primary_color: "#1B365D"
 
 headers:
+  # 英文標準章節標題
   - "RESUME"
   - "CURRICULUM VITAE"
   - "PERSONAL DATA"
@@ -13,24 +14,56 @@ headers:
   - "PERSONAL INFORMATION"
   - "ACADEMIC ATTAINMENT"
   - "EDUCATIONAL QUALIFICATIONS"
+  - "ACADEMIC QUALIFICATIONS"
   - "EDUCATION"
-  - "AWARDS"
   - "WORK EXPERIENCE"
   - "WORKING EXPERIENCE"
   - "CAREER HISTORY"
+  - "EMPLOYMENT HISTORY"
+  - "KEY PROJECTS"
+  - "PROJECTS"
+  - "PROJECT EXPERIENCE"
+  - "AWARDS"
   - "SKILLS"
+  - "LANGUAGES & SKILLS"
+  - "PROFESSIONAL QUALIFICATIONS"
+  - "CERTIFICATIONS"
+  - "LICENCES & CERTIFICATIONS"
   - "DATE AVAILABLE"
+  # 中文標準章節標題 (繁簡兼備)
   - "履歷"
+  - "個人履歷"
   - "個人資料"
   - "工作經驗"
+  - "工作經歷"
+  - "教育背景"
+  - "學歷背景"
+  - "學歷資格"
+  - "專業資格"
+  - "項目經驗"
+  - "重點項目"
+  - "專業技能"
+  - "技能專長"
+  - "語言及技能"
+  - "獲獎經歷"
 
 ocr_replacements:
   - pattern: "\\bpply\\b"
     replacement: "Apply"
+  - pattern: "\\bExperi\\s*ence\\b"
+    replacement: "Experience"
+  - pattern: "\\bEduca\\s*tion\\b"
+    replacement: "Education"
 
 page_no_patterns:
   - "^\\d+$"
-  - "^Page\\s+\\d+\\s+of\\s+\\d+$"
+  - "^Page\\s+\\d+\\s*(?:of|\\/)\\s*\\d+$"
+  - "^[—\\-–]\\s*\\d+\\s*[—\\-–]$"
+  - "^第\\s*\\d+\\s*頁(?:\\s*共\\s*\\d+\\s*頁)?$"
 
 ignore_patterns:
   - "^CONFIDENTIAL$"
+  - "^PRIVATE\\s*&\\s*CONFIDENTIAL$"
+  - "^機密文件$"
+  - "^機密資料$"
+  - "^嚴禁外洩$"
