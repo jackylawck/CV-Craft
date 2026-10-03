@@ -25,7 +25,7 @@ TRANSLATIONS = {
         "title": "CV-Craft 排歷匠 📄",
         "caption": (
             "隱私優先履歷格式化工作站 | 伺服器 RAM 記憶體隔離暫存，會話結束即刻銷毀"
-            " (No Persistent Storage)"
+            " (Zero Persistent Storage)"
         ),
         "settings": "Settings / 格式設定",
         "lang_select": "介面語言 / Language",
@@ -68,7 +68,7 @@ TRANSLATIONS = {
         "title": "CV-Craft Formatter 📄",
         "caption": (
             "Privacy-Preserving CV Workstation | In-Memory RAM Processing,"
-            " Destroyed Upon Session End (No Persistent Storage)"
+            " Destroyed Upon Session End (Zero Persistent Storage)"
         ),
         "settings": "Settings & Styling",
         "lang_select": "Language / 介面語言",
@@ -163,6 +163,8 @@ def process_cv_text(text_to_process: str):
     try:
       parse_result = parse_and_clean_cv(clean_input)
       st.session_state["formatted_text"] = parse_result.cleaned_text
+      # 同步更新預覽編輯框
+      st.session_state["editable_preview"] = parse_result.cleaned_text
       st.toast(t["msg_success"], icon="🎉")
     except Exception as e:
       logger.exception("解析流程發生未預期錯誤")
@@ -188,15 +190,18 @@ with tab_input:
       st.session_state["raw_text_area"] = extracted
       st.session_state["last_uploaded_name"] = uploaded_file.name
       process_cv_text(extracted)
+      st.rerun()  # 立即觸發刷新，保證文字框與解析狀態 100% 同步
     except Exception:
       logger.exception("Word 檔案讀取失敗")
       st.error(t["msg_docx_err"])
 
   btn_col1, btn_col2 = st.columns(2)
 
+  # 徹底清除所有文字與預覽緩存
   def clear_all():
     st.session_state["raw_text_area"] = ""
     st.session_state["formatted_text"] = ""
+    st.session_state["editable_preview"] = ""
     st.session_state["last_uploaded_name"] = None
 
   with btn_col1:
@@ -236,10 +241,10 @@ with tab_input:
 
 # --- TAB 2: 預覽與匯出 ---
 with tab_output:
-  if st.session_state["formatted_text"]:
+  if st.session_state.get("formatted_text"):
     edited_result = st.text_area(
         t["preview_label"],
-        value=st.session_state["formatted_text"],
+        value=st.session_state.get("formatted_text", ""),
         height=320,
         key="editable_preview",
     )
