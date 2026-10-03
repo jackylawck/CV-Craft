@@ -52,7 +52,7 @@ except ImportError:
   except ImportError:
     FUZZY_AVAILABLE = False
 
-# Default section headers (used if config.yaml is unavailable)
+# 完整中英文標準大標題清單
 DEFAULT_HEADERS = [
     "RESUME",
     "CURRICULUM VITAE",
@@ -61,32 +61,46 @@ DEFAULT_HEADERS = [
     "PERSONAL INFORMATION",
     "EDUCATION",
     "ACADEMIC ATTAINMENT",
+    "ACADEMIC QUALIFICATIONS",
     "WORK EXPERIENCE",
     "WORKING EXPERIENCE",
     "CAREER HISTORY",
+    "EMPLOYMENT HISTORY",
     "PROJECT",
+    "KEY PROJECTS",
     "AWARDS",
     "SKILLS",
+    "LANGUAGES & SKILLS",
     "DATE AVAILABLE",
     "履歷",
     "個人資料",
     "工作經驗",
+    "工作經歷",
     "教育背景",
+    "學歷背景",
+    "學歷",
+    "技能專長",
+    "專業技能",
+    "獲獎經歷",
 ]
 
 
 def clean_corrupted_symbols(text: str) -> str:
-  """1. Filter out corrupted Korean/icon characters from PDF/OCR copying."""
-  cleaned = re.sub(
-      r"[^\u4e00-\u9fa5a-zA-Z0-9\s\.\,\:\;\-\_\+\*\/\(\)\@\#\&\%\'\"]+",
-      " ",
-      text,
+  """1. 清理 PDF/OCR 複製產生的特殊亂碼，同時完整保留「中文全形標點」與常見文字字元。
+
+  \u4e00-\u9fa5 : 中文字元 \u3000-\u303f : 中文標點符號 (如 、 。 「 」) \uff01-\uffee :
+  全形符號與標點 (如 ： ， （ ） ％ ＆)
+  """
+  pattern = (
+      r"[^\u4e00-\u9fa5\u3000-\u303f\uff01-\uffeea-zA-Z0-9\s"
+      r"\.\,\:\;\-\_\+\*\/\(\)\@\#\&\%\'\"\•\➢\–\—]+"
   )
+  cleaned = re.sub(pattern, " ", text)
   return cleaned
 
 
 def fix_spaced_out_text(text: str) -> str:
-  """2. Recombine characters broken by excessive spaces (e.g., L I N J i e -> LIN Jie)."""
+  """2. 重組被異常空格拆散的單字 (如 C h a n -> Chan, M o b i l e -> Mobile)。"""
   pattern = r"(?:^|\s)((?:[A-Za-z0-9\,.\-\:\@\#\(\)\/]\s+){2,}[A-Za-z0-9\,.\-\:\@\#\(\)\/])"
 
   def replacer(match):
@@ -97,36 +111,45 @@ def fix_spaced_out_text(text: str) -> str:
 
 
 def is_header_line(line_str: str) -> bool:
-  """3. Strictly identify main section headers to prevent false underlining on sub-items."""
+  """3. 嚴格判定大標題：避開個人欄位、子標籤，防止被誤加底線。"""
   clean_str = line_str.strip().upper()
 
-  # Exclude lines with colons, bullet points, or list markers
+  # 排除冒號欄位、列表符號
   if (
       not clean_str
       or ":" in clean_str
       or "：" in clean_str
-      or clean_str.startswith(("➢", "•", "-"))
+      or clean_str.startswith(("➢", "•", "-", "*"))
   ):
     return False
 
-  # Exclude personal details sub-field labels
-  if clean_str in [
+  # 排除常見個人資料子項標籤
+  excluded_labels = [
       "NAME",
       "SEX",
+      "GENDER",
       "MARITAL STATUS",
       "RESIDENT ADDRESS",
+      "ADDRESS",
+      "LOCATION",
       "TELEPHONE NUMBER",
+      "TELEPHONE",
+      "MOBILE",
       "E-MAIL ADDRESS",
-  ]:
+      "EMAIL",
+      "AGE",
+      "DATE OF BIRTH",
+  ]
+  if clean_str in excluded_labels:
     return False
 
   known_headers = CONFIG.get("headers", DEFAULT_HEADERS)
 
-  # Exact match against known section headers
+  # 精確命中大標題
   if clean_str in known_headers:
     return True
 
-  # Strict fuzzy match for uppercase lines between 4 and 30 characters
+  # 針對全英文且長度合理的未收錄大標題進行模糊比對
   if clean_str.isupper() and 4 <= len(clean_str) <= 30 and FUZZY_AVAILABLE:
     for h in known_headers:
       if fuzz.ratio(clean_str, h) > 85:
@@ -136,7 +159,7 @@ def is_header_line(line_str: str) -> bool:
 
 
 def extract_candidate_filename(raw_text: str) -> str:
-  """4. Extract candidate name accurately for output file naming."""
+  """4. 精準提取候選人中英文姓名作為檔案前綴。"""
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*(?:\(in [A-Za-z]+\))?\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -173,7 +196,9 @@ def extract_candidate_filename(raw_text: str) -> str:
 
   for line in lines:
     if len(line) < 40 and not re.search(
-        r"[:：@\d]|Mobile|Email|Location|Address|Telephone", line, re.IGNORECASE
+        r"[:：@\d]|Mobile|Email|Location|Address|Telephone|Gender|Sex",
+        line,
+        re.IGNORECASE,
     ):
       clean_name = re.sub(r"[^\w\s\u4e00-\u9fa5]", "", line)
       clean_name = "_".join(clean_name.split())
@@ -184,7 +209,7 @@ def extract_candidate_filename(raw_text: str) -> str:
 
 
 def parse_and_clean_cv(raw_text: str) -> CVParseResult:
-  """5. Main pipeline to clean, repair, and parse CV text."""
+  """5. 核心履歷清洗管線。"""
   if not raw_text.strip():
     return CVParseResult(
         raw_text="", cleaned_text="", candidate_filename="CV_Candidate"
@@ -211,15 +236,15 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
     if not line_s:
       continue
 
-    # Filter out standalone page numbers
+    # 過濾獨立頁碼
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in page_patterns):
       continue
 
-    # Filter out confidentiality notices
+    # 過濾保密聲明
     if any(re.search(pat, line_s, re.IGNORECASE) for pat in ignore_patterns):
       continue
 
-    # Perform OCR error replacements
+    # OCR 替換修正
     for item in ocr_replacements:
       if isinstance(item, dict) and "pattern" in item and "replacement" in item:
         line_s = re.sub(
