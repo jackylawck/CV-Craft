@@ -1,7 +1,7 @@
 import html
 import re
 
-# Defensive loading for logger
+# 防禦性載入 logger
 try:
   from utils.logger import logger
 except Exception:
@@ -19,13 +19,13 @@ except Exception:
 
   logger = DummyLogger()
 
-# Defensive loading for CONFIG
+# 防禦性載入 CONFIG
 try:
   from config.loader import CONFIG
 except Exception:
   CONFIG = {}
 
-# Defensive loading for CVParseResult schema
+# 防禦性載入 CVParseResult schema
 try:
   from models.schemas import CVParseResult
 except Exception:
@@ -38,7 +38,7 @@ except Exception:
     detected_headers: list = []
 
 
-# Defensive loading for Fuzzy Matching libraries
+# 防禦性載入 Fuzzy Matching 模組
 FUZZY_AVAILABLE = False
 try:
   from rapidfuzz import fuzz
@@ -73,6 +73,7 @@ DEFAULT_HEADERS = [
     "LANGUAGES & SKILLS",
     "DATE AVAILABLE",
     "履歷",
+    "個人履歷",
     "個人資料",
     "工作經驗",
     "工作經歷",
@@ -84,23 +85,50 @@ DEFAULT_HEADERS = [
     "獲獎經歷",
 ]
 
+# 個人資料常見標籤集合（用於表格重組判定）
+COMMON_LABELS = [
+    "NAME",
+    "SEX",
+    "GENDER",
+    "AGE",
+    "MARITAL STATUS",
+    "NATIONALITY",
+    "CONTACT NO",
+    "CONTACT NO.",
+    "MOBILE",
+    "TELEPHONE",
+    "EMAIL",
+    "E-MAIL",
+    "LOCATION",
+    "ADDRESS",
+    "RESIDENT ADDRESS",
+    "DATE OF BIRTH",
+    "WORK PERMIT TYPE",
+    "PERMANENT RESIDENT",
+    "姓名",
+    "性別",
+    "年齡",
+    "婚姻狀況",
+    "國籍",
+    "聯絡電話",
+    "電話",
+    "電郵",
+    "地址",
+    "居住地址",
+]
+
 
 def clean_corrupted_symbols(text: str) -> str:
-  """1. 清理 PDF/OCR 複製產生的特殊亂碼，同時完整保留「中文全形標點」與常見文字字元。
-
-  \u4e00-\u9fa5 : 中文字元 \u3000-\u303f : 中文標點符號 (如 、 。 「 」) \uff01-\uffee :
-  全形符號與標點 (如 ： ， （ ） ％ ＆)
-  """
+  """清理 PDF/OCR 複製產生的特殊亂碼，完整保留中英文與中文全形標點符號。"""
   pattern = (
       r"[^\u4e00-\u9fa5\u3000-\u303f\uff01-\uffeea-zA-Z0-9\s"
       r"\.\,\:\;\-\_\+\*\/\(\)\@\#\&\%\'\"\•\➢\–\—]+"
   )
-  cleaned = re.sub(pattern, " ", text)
-  return cleaned
+  return re.sub(pattern, " ", text)
 
 
 def fix_spaced_out_text(text: str) -> str:
-  """2. 重組被異常空格拆散的單字 (如 C h a n -> Chan, M o b i l e -> Mobile)。"""
+  """重組被異常空格拆散的字母與單字 (如 C h a n -> Chan, M o b i l e -> Mobile)。"""
   pattern = r"(?:^|\s)((?:[A-Za-z0-9\,.\-\:\@\#\(\)\/]\s+){2,}[A-Za-z0-9\,.\-\:\@\#\(\)\/])"
 
   def replacer(match):
@@ -111,19 +139,14 @@ def fix_spaced_out_text(text: str) -> str:
 
 
 def is_header_line(line_str: str) -> bool:
-  """3. 嚴格判定大標題：避開個人欄位、子標籤，防止被誤加底線。"""
-  clean_str = line_str.strip().upper()
+  """判定章節大標題：先去除尾隨的冒號後再進行比對，徹底修正標題誤判問題。"""
+  # 去除首尾空白與結尾冒號
+  clean_str = re.sub(r"[:：]$", "", line_str.strip()).upper()
 
-  # 排除冒號欄位、列表符號
-  if (
-      not clean_str
-      or ":" in clean_str
-      or "：" in clean_str
-      or clean_str.startswith(("➢", "•", "-", "*"))
-  ):
+  if not clean_str or clean_str.startswith(("➢", "•", "-", "*")):
     return False
 
-  # 排除常見個人資料子項標籤
+  # 排除個人資料字段子標籤
   excluded_labels = [
       "NAME",
       "SEX",
@@ -139,6 +162,7 @@ def is_header_line(line_str: str) -> bool:
       "EMAIL",
       "AGE",
       "DATE OF BIRTH",
+      "WORK PERMIT TYPE",
   ]
   if clean_str in excluded_labels:
     return False
@@ -149,7 +173,7 @@ def is_header_line(line_str: str) -> bool:
   if clean_str in known_headers:
     return True
 
-  # 針對全英文且長度合理的未收錄大標題進行模糊比對
+  # 未收錄大標題的模糊匹配
   if clean_str.isupper() and 4 <= len(clean_str) <= 30 and FUZZY_AVAILABLE:
     for h in known_headers:
       if fuzz.ratio(clean_str, h) > 85:
@@ -158,8 +182,62 @@ def is_header_line(line_str: str) -> bool:
   return False
 
 
+def reconstruct_deconstructed_table(lines: list) -> list:
+  """核心修復：還原因 Word/PDF 表格複製失真導致的「整批 Label 在上、整批 Value 在下」問題。"""
+  new_lines = []
+  i = 0
+  n = len(lines)
+
+  while i < n:
+    line_clean = lines[i].strip()
+    norm_label = re.sub(r"[:：]$", "", line_clean).strip().upper()
+
+    # 偵測是否出現末尾帶冒號的空標籤行 (例如 "Name:", "Sex:")
+    if norm_label in COMMON_LABELS and line_clean.endswith((":", "：")):
+      label_stack = []
+      temp_idx = i
+
+      # 1. 收集連續出現的純標籤
+      while temp_idx < n:
+        cur_l = lines[temp_idx].strip()
+        cur_norm = re.sub(r"[:：]$", "", cur_l).strip().upper()
+        if cur_norm in COMMON_LABELS and cur_l.endswith((":", "：")):
+          label_stack.append(cur_l)
+          temp_idx += 1
+        else:
+          break
+
+      # 2. 如果收集到 2 個以上的連續標籤，嘗試匹配後續的 values
+      if len(label_stack) >= 2:
+        val_stack = []
+        while temp_idx < n and len(val_stack) < len(label_stack):
+          val_l = lines[temp_idx].strip()
+          # 遇到新的大標題或冒號行則中斷提取
+          if (
+              is_header_line(val_l)
+              or val_l.endswith((":", "："))
+              or val_l.upper() in ["EDUCATION", "WORK EXPERIENCE", "PERSONAL DATA"]
+          ):
+            break
+          val_stack.append(val_l)
+          temp_idx += 1
+
+        # 3. 標籤與數值數量完全一致時，一對一合併！
+        if len(val_stack) == len(label_stack):
+          for lbl, val in zip(label_stack, val_stack):
+            clean_lbl = re.sub(r"[:：]$", "", lbl).strip()
+            new_lines.append(f"{clean_lbl}: {val}")
+          i = temp_idx
+          continue
+
+    new_lines.append(line_clean)
+    i += 1
+
+  return new_lines
+
+
 def extract_candidate_filename(raw_text: str) -> str:
-  """4. 精準提取候選人中英文姓名作為檔案前綴。"""
+  """精準提取候選人中英文姓名作為匯出檔案前綴。"""
   match = re.search(
       r"(?:Candidate’s Name|Candidate Name|Name|姓名)\s*(?:\(in [A-Za-z]+\))?\s*[:：]?\s*([A-Za-z\s\(\)\u4e00-\u9fa5]+)",
       raw_text,
@@ -209,7 +287,7 @@ def extract_candidate_filename(raw_text: str) -> str:
 
 
 def parse_and_clean_cv(raw_text: str) -> CVParseResult:
-  """5. 核心履歷清洗管線。"""
+  """核心履歷清洗管線。"""
   if not raw_text.strip():
     return CVParseResult(
         raw_text="", cleaned_text="", candidate_filename="CV_Candidate"
@@ -220,7 +298,10 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
   sanitized_text = clean_corrupted_symbols(raw_text)
   text = fix_spaced_out_text(sanitized_text)
 
-  lines = text.splitlines()
+  # 執行表格還原縫合
+  raw_lines = [l.strip() for l in text.splitlines() if l.strip()]
+  structured_lines = reconstruct_deconstructed_table(raw_lines)
+
   cleaned_lines = []
   detected_headers = []
 
@@ -231,8 +312,7 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
   ignore_patterns = CONFIG.get("ignore_patterns", [])
   ocr_replacements = CONFIG.get("ocr_replacements", [])
 
-  for line in lines:
-    line_s = line.strip()
+  for line_s in structured_lines:
     if not line_s:
       continue
 
@@ -254,7 +334,9 @@ def parse_and_clean_cv(raw_text: str) -> CVParseResult:
     line_s = re.sub(r"[ \t]+", " ", line_s)
 
     if is_header_line(line_s):
-      detected_headers.append(line_s.upper())
+      # 去除末尾冒號統一規範大標題顯示
+      line_s = re.sub(r"[:：]$", "", line_s).strip().upper()
+      detected_headers.append(line_s)
 
     cleaned_lines.append(line_s)
 
