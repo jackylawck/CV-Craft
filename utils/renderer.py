@@ -1,5 +1,3 @@
-# utils/renderer.py
-
 import html
 from io import BytesIO
 import re
@@ -18,7 +16,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate
 
-# 🎯 強制註冊並使用 CJK 字型，徹底解決中文方塊問題
+# 🎯 強制註冊並使用 CJK 字型
 try:
   pdfmetrics.registerFont(UnicodeCIDFont("STHeiti-Light"))
   PDF_FONT = "STHeiti-Light"
@@ -108,11 +106,13 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   story = []
   styles = getSampleStyleSheet()
 
+  # 1. 直接重寫全局 Normal 字型，根絕所有回退風險
+  styles["Normal"].fontName = PDF_FONT
+
   hex_color = config.primary_color_hex.lstrip("#")
   r, g, b = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
   brand_color = colors.Color(r / 255.0, g / 255.0, b / 255.0)
 
-  # 指定 PDF_FONT (STHeiti-Light)
   title_style = ParagraphStyle(
       "DocTitle",
       parent=styles["Normal"],
@@ -149,6 +149,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
   bullet_style = ParagraphStyle(
       "BulletText",
       parent=body_style,
+      fontName=PDF_FONT,  # 顯式指定，防止繼承回退
       leftIndent=15,
       firstLineIndent=-10,
       spaceAfter=3,
@@ -177,6 +178,7 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
         )
       continue
 
+    # 列表項目處理
     if (
         line_str.startswith("➢")
         or line_str.startswith("-")
@@ -184,17 +186,19 @@ def create_pdf(raw_text: str, config: RenderConfig) -> bytes:
     ):
       clean_item = re.sub(r"^[➢\-•]\s*", "&bull; ", safe_line)
       story.append(Paragraph(clean_item, bullet_style))
+
+    # 冒號鍵值標籤處理：注意不可用 <b> 標籤包覆中文字型，改用主題顏色強調區分
     elif ":" in line_str and len(line_str.split(":")[0]) < 25:
       parts = safe_line.split(":", 1)
       formatted_p = (
-          f"<b><font color='{config.primary_color_hex}'>{parts[0]}:</font></b>"
+          f"<font color='{config.primary_color_hex}'>{parts[0]}:</font>"
           f" {parts[1].strip()}"
       )
       story.append(Paragraph(formatted_p, body_style))
     elif "：" in line_str and len(line_str.split("：")[0]) < 25:
       parts = safe_line.split("：", 1)
       formatted_p = (
-          f"<b><font color='{config.primary_color_hex}'>{parts[0]}：</font></b>"
+          f"<font color='{config.primary_color_hex}'>{parts[0]}：</font>"
           f" {parts[1].strip()}"
       )
       story.append(Paragraph(formatted_p, body_style))
