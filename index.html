@@ -19,7 +19,7 @@
     <!-- Google Search Console 驗證標籤 -->
     <meta name="google-site-verification" content="JZ5UohX-CcP_fQV0_DI9VadkKY4ZoTTkUifL88-fIcY" />
     
-    <!-- 精準 SEO 設定 (動態受 JS 控制) -->
+    <!-- 精準 SEO 設定 -->
     <title id="page-title">CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站</title>
     <meta id="page-desc" name="description" content="CV-Craft 排歷匠 — 輕量、高效且極致資安保護（Zero Data Retention）的履歷自動排版工作站。支援文字貼入與 DOCX/TXT 上傳，自動清洗 OCR 雜訊與異常空格，一鍵生成標準 Word (.docx) 及 PDF (.pdf) 文件。">
     <meta name="keywords" content="CV-Craft, 排歷匠, 履歷排版, CV排版, Resume Formatting, Word轉PDF, OCR清洗, Privacy-by-Design, Zero Data Retention, Streamlit, ReportLab, Enterprise Security">
@@ -27,9 +27,9 @@
     <link rel="author" href="https://jackylawck.github.io/jackylawck/" />
     <link rel="me" href="https://jackylawck.github.io/jackylawck/" />
 
-    <!-- Open Graph 社群標籤 -->
-    <meta property="og:title" content="CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站">
-    <meta property="og:description" content="100% 本地記憶體運算，極致資安防護（Zero Data Retention），絕不外洩 PII 個人資料。一鍵匯出高質感 Word 與 PDF 履歷。">
+    <!-- Open Graph 社群標籤 (同步更新嚴謹資安宣稱) -->
+    <meta id="og-title" property="og:title" content="CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站">
+    <meta id="og-desc" property="og:description" content="RAM 記憶體隔離運算，極致資安防護（Zero Data Retention），絕不持久留存 PII 個人資料。一鍵匯出高質感 Word 與 PDF 履歷。">
     <meta property="og:url" content="https://jackylawck.github.io/CV-Craft/">
     <meta property="og:type" content="website">
     <meta property="og:locale" content="zh_HK">
@@ -214,12 +214,14 @@
         <p>© 2026 CV-Craft 排歷匠. Released under the MIT License.</p>
     </footer>
 
-    <!-- 🌐 雙語切換引擎 (支援動態 Meta 與 LocalStorage 偏好記憶) -->
+    <!-- 🌐 雙語切換引擎 (支援動態 Meta、OG 標籤與 LocalStorage 偏好記憶) -->
     <script>
         const i18n = {
             zh: {
                 "meta-title": "CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站",
                 "meta-desc": "CV-Craft 排歷匠 — 輕量、高效且極致資安保護（Zero Data Retention）的履歷自動排版工作站。支援文字貼入與 DOCX/TXT 上傳，自動清洗 OCR 雜訊與異常空格，一鍵生成標準 Word (.docx) 及 PDF (.pdf) 文件。",
+                "og-title": "CV-Craft 排歷匠 | 企業級資安履歷自動排版工作站",
+                "og-desc": "RAM 記憶體隔離運算，極致資安防護（Zero Data Retention），絕不持久留存 PII 個人資料。一鍵匯出高質感 Word 與 PDF 履歷。",
                 "nav-features": "Features / 核心特色",
                 "nav-security": "Security / 資安治理",
                 "hero-tag": "Enterprise Security & Privacy-Preserving CV Formatting",
@@ -245,6 +247,8 @@
             en: {
                 "meta-title": "CV-Craft Formatter | Privacy-Preserving Enterprise CV Workstation",
                 "meta-desc": "CV-Craft Formatter — Lightweight, secure, and privacy-preserving CV formatting tool with Zero Data Retention. Supports DOCX/TXT uploads, smart OCR repair, and one-click Word/PDF export.",
+                "og-title": "CV-Craft Formatter | Privacy-Preserving Enterprise CV Workstation",
+                "og-desc": "Isolated RAM processing ensuring Zero Data Retention. Candidate PII is destroyed immediately upon session closure.",
                 "nav-features": "Key Features",
                 "nav-security": "Security & Privacy",
                 "hero-tag": "Enterprise Security & Privacy-Preserving CV Formatting",
@@ -279,10 +283,15 @@
             
             const bundle = i18n[lang];
             
-            // 動態更新 Meta Data 與 Title (神作級 SEO 支援)
+            // 動態更新 Meta Data、Title 與 Open Graph 標籤
             document.title = bundle['meta-title'];
             const metaDesc = document.getElementById('page-desc');
             if (metaDesc) metaDesc.setAttribute('content', bundle['meta-desc']);
+            
+            const ogTitle = document.getElementById('og-title');
+            if (ogTitle) ogTitle.setAttribute('content', bundle['og-title']);
+            const ogDesc = document.getElementById('og-desc');
+            if (ogDesc) ogDesc.setAttribute('content', bundle['og-desc']);
             
             // 動態更新頁面文字
             document.querySelectorAll('[data-i18n]').forEach(el => {
